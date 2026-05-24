@@ -177,6 +177,7 @@ export default function AdminPage() {
 
       <div className="grid two">
         <div className="panel">
+          <p className="section-eyebrow">Inscription</p>
           <h2>Ajouter un véhicule</h2>
           <form className="form" onSubmit={handleAddVehicle}>
             <label className="field"><span className="label">Nom du véhicule *</span><input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
@@ -191,19 +192,20 @@ export default function AdminPage() {
         </div>
 
         <div className="panel grid">
-          <h2>Actions événement</h2>
+          <p className="section-eyebrow">Outils</p>
+          <h2>Actions rapides</h2>
           <button className="button" onClick={() => run(refresh)}><RefreshCw size={16} /> Rafraîchir</button>
           <Link className="button" to="/qr"><QrCode size={16} /> QR code du rasso</Link>
           <button className="button" onClick={exportCsv}>Exporter CSV</button>
+          <hr className="divider" />
+          <p className="section-eyebrow">Zone sensible</p>
           <button className="button danger" onClick={handleResetVotes}><Trash2 size={16} /> Supprimer les votes</button>
           {!isSupabaseConfigured() && <button className="button danger" onClick={handleResetDemo}>Reset démo locale</button>}
-          <p className="muted">La V1 ne gère pas encore ouverture/fermeture d’event côté Supabase. Elle pose la base admin, vote, résultats et reset.</p>
         </div>
       </div>
 
-      <SupabaseConfigPanel onChange={() => { refresh().catch((err: Error) => setError(err.message)); }} />
-
       <div className="panel grid">
+        <p className="section-eyebrow">Participants</p>
         <h2>Véhicules inscrits</h2>
         <div className="table-wrap">
           <table>
@@ -228,9 +230,12 @@ export default function AdminPage() {
       </div>
 
       <div className="panel grid">
+        <p className="section-eyebrow">Résultats</p>
         <h2>Classement</h2>
         <ResultsTable scores={scores} />
       </div>
+
+      <SupabaseConfigPanel onChange={() => { refresh().catch((err: Error) => setError(err.message)); }} />
     </section>
   );
 }
