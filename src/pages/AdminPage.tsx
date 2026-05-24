@@ -1,6 +1,7 @@
 import { QrCode, RefreshCw, Shield, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import ImagePicker from '../components/ImagePicker';
 import ResultsTable from '../components/ResultsTable';
 import { isAdminUnlocked, lockAdmin, unlockAdmin } from '../lib/localSession';
 import { addVehicle, deleteVehicle, getVehicles, getVotes, resetDemoData, resetVotes, toggleVehicleDisqualification } from '../lib/repository';
@@ -182,7 +183,8 @@ export default function AdminPage() {
             <label className="field"><span className="label">Propriétaire *</span><input className="input" value={form.ownerName} onChange={(e) => setForm({ ...form, ownerName: e.target.value })} /></label>
             <label className="field"><span className="label">Catégorie</span><input className="input" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} placeholder="JDM, Sportive, Luxe..." /></label>
             <label className="field"><span className="label">Plaque</span><input className="input" value={form.plate} onChange={(e) => setForm({ ...form, plate: e.target.value })} /></label>
-            <label className="field"><span className="label">URL photo</span><input className="input" value={form.imageUrl} onChange={(e) => setForm({ ...form, imageUrl: e.target.value })} placeholder="https://..." /></label>
+            <ImagePicker value={form.imageUrl || undefined} onChange={(value) => setForm({ ...form, imageUrl: value || '' })} />
+            <label className="field"><span className="label">…ou coller une URL d'image</span><input className="input" value={form.imageUrl.startsWith('data:') ? '' : form.imageUrl} onChange={(e) => setForm({ ...form, imageUrl: e.target.value })} placeholder="https://..." /></label>
             <label className="field"><span className="label">Description</span><textarea className="textarea" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></label>
             <button className="button primary" type="submit">Ajouter</button>
           </form>

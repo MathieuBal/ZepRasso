@@ -1,4 +1,4 @@
-import { Download, Printer } from 'lucide-react';
+import { Download } from 'lucide-react';
 import { QRCodeCanvas, QRCodeSVG } from 'qrcode.react';
 import { useRef } from 'react';
 import { Link } from 'react-router-dom';
@@ -39,8 +39,7 @@ export default function QrPage() {
         <p className="muted qr-url">{siteUrl}</p>
 
         <div className="actions">
-          <button className="button primary" onClick={() => window.print()}><Printer size={16} /> Imprimer</button>
-          <button className="button" onClick={() => downloadPng(darkRef, 'noir')}><Download size={16} /> PNG fond transparent (noir)</button>
+          <button className="button primary" onClick={() => downloadPng(darkRef, 'noir')}><Download size={16} /> PNG fond transparent (noir)</button>
           <button className="button" onClick={() => downloadPng(lightRef, 'blanc')}><Download size={16} /> PNG fond transparent (blanc)</button>
           <Link className="button ghost" to="/admin">Retour admin</Link>
         </div>
