@@ -38,7 +38,7 @@ zepadmin
 
 1. Créer un projet Supabase.
 2. Ouvrir le SQL Editor.
-3. Exécuter le fichier `supabase/schema.sql`.
+3. Exécuter le fichier `supabase/schema.sql` (crée les tables, les policies, et le bucket Storage `vehicle-photos`).
 4. Copier `.env.example` vers `.env.local`.
 5. Remplir les variables :
 
@@ -50,6 +50,23 @@ VITE_EVENT_ID="00000000-0000-0000-0000-000000000001"
 ```
 
 Important : ne jamais mettre de clé `service_role` dans une app front.
+
+Une fois Supabase configuré, les votes sont partagés entre tous les
+appareils et les photos importées dans l'admin sont uploadées dans
+Supabase Storage (visibles par tous les visiteurs).
+
+### Déployer avec Supabase sur GitHub Pages
+
+Les variables `VITE_*` sont lues au moment du build. Pour le site
+déployé, ajoute-les comme secrets de dépôt :
+
+1. `Settings` > `Secrets and variables` > `Actions` > `New repository secret`.
+2. Créer : `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_ADMIN_CODE`,
+   `VITE_EVENT_ID`.
+3. Relancer le workflow `Deploy GitHub Pages` (onglet `Actions`).
+
+Sans ces secrets, le site déployé reste en mode démo `localStorage`
+(données isolées par appareil).
 
 ## Déployer sur GitHub Pages
 
@@ -95,8 +112,7 @@ Cette V1 est volontairement simple :
 
 - admin protégé par code côté front, pas une sécurité forte ;
 - votes liés au pseudo, pas encore au compte Discord ;
-- photos par URL, pas encore upload direct ;
-- politiques Supabase permissives pour faciliter le MVP.
+- politiques Supabase et Storage permissives pour faciliter le MVP.
 
 ## Roadmap possible
 

@@ -60,3 +60,17 @@ create policy "Public can delete votes" on votes for delete using (true);
 insert into events (id, name, status)
 values ('00000000-0000-0000-0000-000000000001', 'ZepRasso - Car Meet RP', 'open')
 on conflict (id) do nothing;
+
+-- Stockage des photos de véhicules.
+insert into storage.buckets (id, name, public)
+values ('vehicle-photos', 'vehicle-photos', true)
+on conflict (id) do nothing;
+
+-- MVP volontairement permissif : lecture et upload publics sur ce bucket.
+create policy "Public read vehicle photos"
+  on storage.objects for select
+  using (bucket_id = 'vehicle-photos');
+
+create policy "Public upload vehicle photos"
+  on storage.objects for insert
+  with check (bucket_id = 'vehicle-photos');

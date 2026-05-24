@@ -32,6 +32,11 @@ jobs:
         run: npm install
       - name: Build
         run: npm run build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_ADMIN_CODE: ${{ secrets.VITE_ADMIN_CODE }}
+          VITE_EVENT_ID: ${{ secrets.VITE_EVENT_ID }}
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:

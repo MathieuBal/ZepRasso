@@ -5,7 +5,21 @@ import type { RassoEvent, Vehicle, Vote, VoteInput } from '../types';
 
 const LOCAL_VEHICLES_KEY = 'zeprasso_demo_vehicles';
 const LOCAL_VOTES_KEY = 'zeprasso_demo_votes';
-const EVENT_ID = import.meta.env.VITE_EVENT_ID || demoEvent.id;
+const DEFAULT_SUPABASE_EVENT_ID = '00000000-0000-0000-0000-000000000001';
+const PHOTO_BUCKET = 'vehicle-photos';
+const EVENT_ID = import.meta.env.VITE_EVENT_ID || (isSupabaseConfigured ? DEFAULT_SUPABASE_EVENT_ID : demoEvent.id);
+
+async function uploadPhotoIfNeeded(imageUrl?: string): Promise<string | undefined> {
+  if (!imageUrl || !imageUrl.startsWith('data:') || !supabase) return imageUrl;
+  const blob = await (await fetch(imageUrl)).blob();
+  const path = `${EVENT_ID}/${safeUuid()}.jpg`;
+  const { error } = await supabase.storage.from(PHOTO_BUCKET).upload(path, blob, {
+    contentType: blob.type || 'image/jpeg',
+    upsert: false,
+  });
+  if (error) throw new Error(`Upload photo: ${error.message}`);
+  return supabase.storage.from(PHOTO_BUCKET).getPublicUrl(path).data.publicUrl;
+}
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
@@ -131,13 +145,15 @@ export async function addVehicle(vehicle: Omit<Vehicle, 'id' | 'eventId' | 'crea
     return;
   }
 
+  const imageUrl = await uploadPhotoIfNeeded(vehicle.imageUrl);
+
   const { error } = await supabase.from('vehicles').insert({
     event_id: EVENT_ID,
     name: vehicle.name,
     owner_name: vehicle.ownerName,
     category: vehicle.category,
     plate: vehicle.plate,
-    image_url: vehicle.imageUrl,
+    image_url: imageUrl,
     description: vehicle.description,
     is_contestant: vehicle.isContestant,
     is_disqualified: vehicle.isDisqualified,
