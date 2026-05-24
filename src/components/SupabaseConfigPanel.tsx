@@ -62,6 +62,7 @@ export default function SupabaseConfigPanel({ onChange }: SupabaseConfigPanelPro
 
   return (
     <div className="panel grid">
+      <p className="section-eyebrow">Configuration technique</p>
       <h2>Connexion Supabase (votes partagés)</h2>
       <p className="muted">
         {hasRuntimeConfig()

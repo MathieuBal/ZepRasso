@@ -37,7 +37,7 @@ export default function VehicleCard({ vehicle, hasVoted = false }: VehicleCardPr
           <p className="muted">{vehicle.category}{vehicle.plate ? ` · Plaque ${vehicle.plate}` : ''}</p>
         </div>
         {vehicle.description && <p className="muted">{vehicle.description}</p>}
-        <Link className="button primary" to={`/vehicles/${vehicle.id}`}>
+        <Link className={hasVoted ? 'button' : 'button primary'} to={`/vehicles/${vehicle.id}`}>
           <Trophy size={16} /> {hasVoted ? 'Voir / modifier le vote' : 'Voter'}
         </Link>
       </div>
