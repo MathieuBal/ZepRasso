@@ -34,13 +34,25 @@ Code admin par défaut :
 zepadmin
 ```
 
-## Brancher Supabase
+## Brancher Supabase (méthode simple, sans secrets ni redéploiement)
 
 1. Créer un projet Supabase.
-2. Ouvrir le SQL Editor.
-3. Exécuter le fichier `supabase/schema.sql`.
-4. Copier `.env.example` vers `.env.local`.
-5. Remplir les variables :
+2. Ouvrir le SQL Editor et exécuter `supabase/schema.sql` (tables, policies, bucket Storage `vehicle-photos`).
+3. Dans `Project Settings` > `API`, copier la **Project URL** et la clé **anon public**.
+4. Sur le site, aller dans **Admin** > **Connexion Supabase**, coller l'URL et la clé,
+   garder l'Event ID par défaut, puis **Tester la connexion** et **Enregistrer**.
+
+C'est tout : la connexion est mémorisée sur l'appareil de l'organisateur.
+Les votes sont alors partagés entre tous les appareils et les photos
+importées sont uploadées dans Supabase Storage (visibles par tous).
+
+Important : ne jamais utiliser la clé `service_role` dans une app front.
+
+### Option avancée : configurer via le build
+
+À la place du panneau Admin, on peut fournir les variables au build
+(`.env.local` en local, ou secrets de dépôt `Settings` > `Secrets and
+variables` > `Actions` pour GitHub Pages) :
 
 ```env
 VITE_SUPABASE_URL="https://ton-projet.supabase.co"
@@ -49,7 +61,7 @@ VITE_ADMIN_CODE="change-moi"
 VITE_EVENT_ID="00000000-0000-0000-0000-000000000001"
 ```
 
-Important : ne jamais mettre de clé `service_role` dans une app front.
+La config saisie dans l'Admin a priorité sur celle du build.
 
 ## Déployer sur GitHub Pages
 
@@ -95,8 +107,7 @@ Cette V1 est volontairement simple :
 
 - admin protégé par code côté front, pas une sécurité forte ;
 - votes liés au pseudo, pas encore au compte Discord ;
-- photos par URL, pas encore upload direct ;
-- politiques Supabase permissives pour faciliter le MVP.
+- politiques Supabase et Storage permissives pour faciliter le MVP.
 
 ## Roadmap possible
 

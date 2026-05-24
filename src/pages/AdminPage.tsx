@@ -1,7 +1,9 @@
 import { QrCode, RefreshCw, Shield, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import ImagePicker from '../components/ImagePicker';
 import ResultsTable from '../components/ResultsTable';
+import SupabaseConfigPanel from '../components/SupabaseConfigPanel';
 import { isAdminUnlocked, lockAdmin, unlockAdmin } from '../lib/localSession';
 import { addVehicle, deleteVehicle, getVehicles, getVotes, resetDemoData, resetVotes, toggleVehicleDisqualification } from '../lib/repository';
 import { calculateVehicleScores } from '../lib/scoring';
@@ -169,7 +171,7 @@ export default function AdminPage() {
           <button className="button ghost" onClick={() => { lockAdmin(); setUnlocked(false); }}>Verrouiller</button>
         </div>
         <h1 className="hero-title gradient-text">Gestion du rasso</h1>
-        <p className="lead">Mode données : {isSupabaseConfigured ? 'Supabase partagé' : 'démo locale navigateur'}</p>
+        <p className="lead">Mode données : {isSupabaseConfigured() ? 'Supabase partagé' : 'démo locale navigateur'}</p>
         {message && <p className="success">{message}</p>}
         {error && <p className="error">{error}</p>}
       </div>
@@ -182,7 +184,8 @@ export default function AdminPage() {
             <label className="field"><span className="label">Propriétaire *</span><input className="input" value={form.ownerName} onChange={(e) => setForm({ ...form, ownerName: e.target.value })} /></label>
             <label className="field"><span className="label">Catégorie</span><input className="input" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} placeholder="JDM, Sportive, Luxe..." /></label>
             <label className="field"><span className="label">Plaque</span><input className="input" value={form.plate} onChange={(e) => setForm({ ...form, plate: e.target.value })} /></label>
-            <label className="field"><span className="label">URL photo</span><input className="input" value={form.imageUrl} onChange={(e) => setForm({ ...form, imageUrl: e.target.value })} placeholder="https://..." /></label>
+            <ImagePicker value={form.imageUrl || undefined} onChange={(value) => setForm({ ...form, imageUrl: value || '' })} />
+            <label className="field"><span className="label">…ou coller une URL d'image</span><input className="input" value={form.imageUrl.startsWith('data:') ? '' : form.imageUrl} onChange={(e) => setForm({ ...form, imageUrl: e.target.value })} placeholder="https://..." /></label>
             <label className="field"><span className="label">Description</span><textarea className="textarea" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></label>
             <button className="button primary" type="submit">Ajouter</button>
           </form>
@@ -194,10 +197,12 @@ export default function AdminPage() {
           <Link className="button" to="/qr"><QrCode size={16} /> QR code du rasso</Link>
           <button className="button" onClick={exportCsv}>Exporter CSV</button>
           <button className="button danger" onClick={handleResetVotes}><Trash2 size={16} /> Supprimer les votes</button>
-          {!isSupabaseConfigured && <button className="button danger" onClick={handleResetDemo}>Reset démo locale</button>}
+          {!isSupabaseConfigured() && <button className="button danger" onClick={handleResetDemo}>Reset démo locale</button>}
           <p className="muted">La V1 ne gère pas encore ouverture/fermeture d’event côté Supabase. Elle pose la base admin, vote, résultats et reset.</p>
         </div>
       </div>
+
+      <SupabaseConfigPanel onChange={() => { refresh().catch((err: Error) => setError(err.message)); }} />
 
       <div className="panel grid">
         <h2>Véhicules inscrits</h2>
