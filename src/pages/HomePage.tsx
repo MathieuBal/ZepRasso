@@ -21,7 +21,7 @@ export default function HomePage() {
         <h2 style={{ margin: 0 }}>Flux simple</h2>
         <p className="muted">1. Le visiteur scanne le QR code. 2. Il entre son pseudo. 3. Il vote véhicule par véhicule. 4. L’orga valide les résultats.</p>
         <div className="notice">
-          Mode actuel : {isSupabaseConfigured ? 'Supabase connecté, votes partagés.' : 'démo locale, à connecter à Supabase pour un vrai event.'}
+          Mode actuel : {isSupabaseConfigured() ? 'Supabase connecté, votes partagés.' : 'démo locale, à connecter à Supabase pour un vrai event.'}
         </div>
         <Link className="button" to="/results"><Trophy size={16} /> Voir les résultats</Link>
       </aside>

@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import ImagePicker from '../components/ImagePicker';
 import ResultsTable from '../components/ResultsTable';
+import SupabaseConfigPanel from '../components/SupabaseConfigPanel';
 import { isAdminUnlocked, lockAdmin, unlockAdmin } from '../lib/localSession';
 import { addVehicle, deleteVehicle, getVehicles, getVotes, resetDemoData, resetVotes, toggleVehicleDisqualification } from '../lib/repository';
 import { calculateVehicleScores } from '../lib/scoring';
@@ -170,7 +171,7 @@ export default function AdminPage() {
           <button className="button ghost" onClick={() => { lockAdmin(); setUnlocked(false); }}>Verrouiller</button>
         </div>
         <h1 className="hero-title gradient-text">Gestion du rasso</h1>
-        <p className="lead">Mode données : {isSupabaseConfigured ? 'Supabase partagé' : 'démo locale navigateur'}</p>
+        <p className="lead">Mode données : {isSupabaseConfigured() ? 'Supabase partagé' : 'démo locale navigateur'}</p>
         {message && <p className="success">{message}</p>}
         {error && <p className="error">{error}</p>}
       </div>
@@ -196,10 +197,12 @@ export default function AdminPage() {
           <Link className="button" to="/qr"><QrCode size={16} /> QR code du rasso</Link>
           <button className="button" onClick={exportCsv}>Exporter CSV</button>
           <button className="button danger" onClick={handleResetVotes}><Trash2 size={16} /> Supprimer les votes</button>
-          {!isSupabaseConfigured && <button className="button danger" onClick={handleResetDemo}>Reset démo locale</button>}
+          {!isSupabaseConfigured() && <button className="button danger" onClick={handleResetDemo}>Reset démo locale</button>}
           <p className="muted">La V1 ne gère pas encore ouverture/fermeture d’event côté Supabase. Elle pose la base admin, vote, résultats et reset.</p>
         </div>
       </div>
+
+      <SupabaseConfigPanel onChange={() => { refresh().catch((err: Error) => setError(err.message)); }} />
 
       <div className="panel grid">
         <h2>Véhicules inscrits</h2>
