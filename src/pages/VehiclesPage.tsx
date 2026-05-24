@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import PageHeader from '../components/PageHeader';
 import VehicleCard from '../components/VehicleCard';
 import { getStoredPseudo } from '../lib/localSession';
 import { getVehicles, getVotes } from '../lib/repository';
@@ -27,14 +28,13 @@ export default function VehiclesPage() {
 
   return (
     <section className="grid">
-      <div className="card">
-        <h1 className="hero-title gradient-text">Véhicules en course</h1>
+      <PageHeader title="Véhicules en course" badge={pseudo ? `Pseudo : ${pseudo}` : 'Pseudo requis'} badgeTone={pseudo ? 'ok' : 'wait'}>
         {pseudo ? (
-          <p className="lead">Connecté en tant que <strong>{pseudo}</strong>. Tu as voté pour {votedCount}/{vehicles.length} véhicules.</p>
+          <p className="lead">Tu as voté pour {votedCount}/{vehicles.length} véhicules.</p>
         ) : (
           <p className="notice">Entre ton pseudo avant de voter. <Link to="/login"><strong>Définir mon pseudo</strong></Link></p>
         )}
-      </div>
+      </PageHeader>
 
       {loading && <p className="notice">Chargement des véhicules...</p>}
       {error && <p className="error">{error}</p>}

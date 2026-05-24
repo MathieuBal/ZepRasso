@@ -24,7 +24,7 @@ export default function VehicleCard({ vehicle, hasVoted = false }: VehicleCardPr
         <div className="vehicle-img" />
       )}
       <div className="vehicle-body grid">
-        <div className="actions" style={{ justifyContent: 'space-between' }}>
+        <div className="between">
           <span className={hasVoted ? 'badge ok' : 'badge wait'}>
             {hasVoted ? <CheckCircle2 size={15} /> : <Circle size={15} />}
             {hasVoted ? 'Déjà voté' : 'À noter'}

@@ -2,6 +2,7 @@ import { QrCode, RefreshCw, Shield, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import ImagePicker from '../components/ImagePicker';
+import PageHeader from '../components/PageHeader';
 import ResultsTable from '../components/ResultsTable';
 import SupabaseConfigPanel from '../components/SupabaseConfigPanel';
 import { isAdminUnlocked, lockAdmin, unlockAdmin } from '../lib/localSession';
@@ -144,11 +145,9 @@ export default function AdminPage() {
   if (!unlocked) {
     return (
       <section className="grid two">
-        <div className="card">
-          <span className="badge wait"><Shield size={16} /> Organisateur</span>
-          <h1 className="hero-title gradient-text">Admin</h1>
+        <PageHeader title="Admin" badge={<><Shield size={16} /> Organisateur</>} badgeTone="wait">
           <p className="lead">Accès simple pour gérer les véhicules et consulter les résultats. Code par défaut en démo : <strong>zepadmin</strong>.</p>
-        </div>
+        </PageHeader>
         <div className="panel">
           <form className="form" onSubmit={handleUnlock}>
             <label className="field">
@@ -165,12 +164,12 @@ export default function AdminPage() {
 
   return (
     <section className="grid">
-      <div className="card">
-        <div className="actions" style={{ justifyContent: 'space-between' }}>
+      <div className="card page-header">
+        <div className="between">
           <span className="badge ok"><Shield size={16} /> Admin ouvert</span>
           <button className="button ghost" onClick={() => { lockAdmin(); setUnlocked(false); }}>Verrouiller</button>
         </div>
-        <h1 className="hero-title gradient-text">Gestion du rasso</h1>
+        <h1 className="page-title gradient-text">Gestion du rasso</h1>
         <p className="lead">Mode données : {isSupabaseConfigured() ? 'Supabase partagé' : 'démo locale navigateur'}</p>
         {message && <p className="success">{message}</p>}
         {error && <p className="error">{error}</p>}
