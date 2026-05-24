@@ -93,6 +93,7 @@ tr:last-child td { border-bottom: 0; }
 .qr-card .lead { max-width: 520px; }
 .qr-frame { background: #fff; padding: 20px; border-radius: 24px; line-height: 0; box-shadow: 0 16px 40px rgba(0,0,0,.3); }
 .qr-url { word-break: break-all; font-weight: 700; color: #fed7aa; }
+.qr-export-hidden { position: absolute; width: 0; height: 0; overflow: hidden; opacity: 0; pointer-events: none; }
 
 @media print {
   body { background: #fff; }

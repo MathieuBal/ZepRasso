@@ -1,6 +1,10 @@
-import { Printer } from 'lucide-react';
-import { QRCodeSVG } from 'qrcode.react';
+import { Download, Printer } from 'lucide-react';
+import { QRCodeCanvas, QRCodeSVG } from 'qrcode.react';
+import { useRef } from 'react';
 import { Link } from 'react-router-dom';
+
+const TRANSPARENT = 'rgba(0,0,0,0)';
+const EXPORT_SIZE = 1024;
 
 function getSiteUrl(): string {
   const base = import.meta.env.BASE_URL || '/';
@@ -9,6 +13,17 @@ function getSiteUrl(): string {
 
 export default function QrPage() {
   const siteUrl = getSiteUrl();
+  const darkRef = useRef<HTMLCanvasElement>(null);
+  const lightRef = useRef<HTMLCanvasElement>(null);
+
+  function downloadPng(ref: React.RefObject<HTMLCanvasElement | null>, suffix: string) {
+    const canvas = ref.current;
+    if (!canvas) return;
+    const link = document.createElement('a');
+    link.href = canvas.toDataURL('image/png');
+    link.download = `zeprasso-qr-${suffix}.png`;
+    link.click();
+  }
 
   return (
     <section className="grid">
@@ -25,8 +40,16 @@ export default function QrPage() {
 
         <div className="actions">
           <button className="button primary" onClick={() => window.print()}><Printer size={16} /> Imprimer</button>
+          <button className="button" onClick={() => downloadPng(darkRef, 'noir')}><Download size={16} /> PNG fond transparent (noir)</button>
+          <button className="button" onClick={() => downloadPng(lightRef, 'blanc')}><Download size={16} /> PNG fond transparent (blanc)</button>
           <Link className="button ghost" to="/admin">Retour admin</Link>
         </div>
+        <p className="muted">PNG noir : pour un support clair. PNG blanc : pour un support sombre.</p>
+      </div>
+
+      <div className="qr-export-hidden" aria-hidden="true">
+        <QRCodeCanvas ref={darkRef} value={siteUrl} size={EXPORT_SIZE} level="M" marginSize={2} bgColor={TRANSPARENT} fgColor="#000000" />
+        <QRCodeCanvas ref={lightRef} value={siteUrl} size={EXPORT_SIZE} level="M" marginSize={2} bgColor={TRANSPARENT} fgColor="#ffffff" />
       </div>
     </section>
   );
