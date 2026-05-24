@@ -39,14 +39,18 @@ export default function VehicleVotePage() {
   }) {
     if (!vehicle || !pseudo) return;
     setError(null);
-    await upsertVote({
-      eventId: getConfiguredEventId(),
-      vehicleId: vehicle.id,
-      voterPseudo: pseudo,
-      ...scores,
-    });
-    setSaved(true);
-    setTimeout(() => navigate('/vehicles'), 700);
+    try {
+      await upsertVote({
+        eventId: getConfiguredEventId(),
+        vehicleId: vehicle.id,
+        voterPseudo: pseudo,
+        ...scores,
+      });
+      setSaved(true);
+      setTimeout(() => navigate('/vehicles'), 700);
+    } catch (err) {
+      setError((err as Error).message || "Impossible d'enregistrer le vote.");
+    }
   }
 
   if (loading) return <p className="notice">Chargement du véhicule...</p>;
@@ -55,7 +59,19 @@ export default function VehicleVotePage() {
   return (
     <section className="grid two">
       <div className="card vehicle-card">
-        {vehicle.imageUrl ? <img className="vehicle-img" src={vehicle.imageUrl} alt={vehicle.name} /> : <div className="vehicle-img" />}
+        {vehicle.imageUrl ? (
+          <img
+            className="vehicle-img"
+            src={vehicle.imageUrl}
+            alt={vehicle.name}
+            loading="lazy"
+            onError={(event) => {
+              event.currentTarget.style.display = 'none';
+            }}
+          />
+        ) : (
+          <div className="vehicle-img" />
+        )}
         <div className="vehicle-body grid">
           <Link className="button ghost" to="/vehicles"><ArrowLeft size={16} /> Retour</Link>
           <div>

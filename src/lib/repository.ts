@@ -1,4 +1,5 @@
 import { demoEvent, demoVehicles, demoVotes } from './mockData';
+import { safeStorage, safeUuid } from './storage';
 import { isSupabaseConfigured, supabase } from './supabase';
 import type { RassoEvent, Vehicle, Vote, VoteInput } from '../types';
 
@@ -6,18 +7,22 @@ const LOCAL_VEHICLES_KEY = 'zeprasso_demo_vehicles';
 const LOCAL_VOTES_KEY = 'zeprasso_demo_votes';
 const EVENT_ID = import.meta.env.VITE_EVENT_ID || demoEvent.id;
 
+function clone<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
 function readLocal<T>(key: string, fallback: T): T {
-  const raw = localStorage.getItem(key);
-  if (!raw) return fallback;
+  const raw = safeStorage.getItem(key);
+  if (!raw) return clone(fallback);
   try {
     return JSON.parse(raw) as T;
   } catch {
-    return fallback;
+    return clone(fallback);
   }
 }
 
 function writeLocal<T>(key: string, value: T): void {
-  localStorage.setItem(key, JSON.stringify(value));
+  safeStorage.setItem(key, JSON.stringify(value));
 }
 
 function mapVehicleFromDb(row: Record<string, unknown>): Vehicle {
@@ -91,7 +96,7 @@ export async function upsertVote(input: VoteInput): Promise<void> {
     const now = new Date().toISOString();
     const vote: Vote = {
       ...input,
-      id: existingIndex >= 0 ? votes[existingIndex].id : crypto.randomUUID(),
+      id: existingIndex >= 0 ? votes[existingIndex].id : safeUuid(),
       createdAt: existingIndex >= 0 ? votes[existingIndex].createdAt : now,
       updatedAt: now,
     };
@@ -121,7 +126,7 @@ export async function upsertVote(input: VoteInput): Promise<void> {
 export async function addVehicle(vehicle: Omit<Vehicle, 'id' | 'eventId' | 'createdAt'>): Promise<void> {
   if (!isSupabaseConfigured || !supabase) {
     const vehicles = readLocal<Vehicle[]>(LOCAL_VEHICLES_KEY, demoVehicles);
-    vehicles.push({ ...vehicle, id: crypto.randomUUID(), eventId: demoEvent.id, createdAt: new Date().toISOString() });
+    vehicles.push({ ...vehicle, id: safeUuid(), eventId: EVENT_ID, createdAt: new Date().toISOString() });
     writeLocal(LOCAL_VEHICLES_KEY, vehicles);
     return;
   }
