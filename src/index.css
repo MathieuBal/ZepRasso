@@ -121,7 +121,15 @@ button { cursor: pointer; }
   pointer-events: none;
 }
 
-.hero-title { font-size: clamp(2.2rem, 7vw, 5rem); line-height: .92; letter-spacing: -0.07em; margin: 0 0 18px; }
+.hero-title { font-size: clamp(2.2rem, 7vw, 4.6rem); line-height: .92; letter-spacing: -0.07em; margin: 0 0 18px; }
+
+.page-header { display: grid; gap: 12px; }
+.page-title { font-size: clamp(1.9rem, 4.5vw, 3rem); line-height: 1; letter-spacing: -0.05em; margin: 0; }
+.page-header .lead { margin: 0; }
+
+h2 { font-size: 1.2rem; font-weight: 800; letter-spacing: -0.02em; margin: 0; }
+
+.between { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 
 .gradient-text {
   background: linear-gradient(110deg, var(--magenta-soft) 0%, #ffffff 38%, var(--cyan-soft) 78%);

@@ -75,7 +75,7 @@ export default function VehicleVotePage() {
         <div className="vehicle-body grid">
           <Link className="button ghost" to="/vehicles"><ArrowLeft size={16} /> Retour</Link>
           <div>
-            <h1 className="hero-title gradient-text" style={{ fontSize: 'clamp(2rem, 6vw, 3.6rem)' }}>{vehicle.name}</h1>
+            <h1 className="page-title gradient-text">{vehicle.name}</h1>
             <p className="lead">Propriétaire : <strong>{vehicle.ownerName}</strong></p>
             <p className="muted">{vehicle.category}{vehicle.plate ? ` · Plaque ${vehicle.plate}` : ''}</p>
             {vehicle.description && <p className="muted">{vehicle.description}</p>}
@@ -84,7 +84,7 @@ export default function VehicleVotePage() {
       </div>
       <div className="panel grid">
         <span className={vote ? 'badge ok' : 'badge wait'}>{vote ? 'Vote déjà enregistré' : 'Vote à faire'}</span>
-        <h2 style={{ margin: 0 }}>Note ce véhicule</h2>
+        <h2>Note ce véhicule</h2>
         {vehicle.isDisqualified && <p className="error">Ce véhicule est disqualifié, le vote est désactivé.</p>}
         {error && <p className="error">{error}</p>}
         {saved && <p className="success">Vote enregistré, retour à la liste...</p>}

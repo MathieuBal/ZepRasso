@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import PageHeader from '../components/PageHeader';
 import ResultsTable from '../components/ResultsTable';
 import { getVehicles, getVotes } from '../lib/repository';
 import { calculateVehicleScores } from '../lib/scoring';
@@ -18,11 +19,9 @@ export default function ResultsPage() {
 
   return (
     <section className="grid">
-      <div className="card">
-        <span className="badge closed">Classement live</span>
-        <h1 className="hero-title gradient-text">Résultats</h1>
+      <PageHeader title="Résultats" badge="Classement live" badgeTone="closed">
         <p className="lead">Classement calculé avec la moyenne des cinq critères. En V1, l’orga garde le dernier mot via l’admin.</p>
-      </div>
+      </PageHeader>
       {loading && <p className="notice">Calcul des résultats...</p>}
       {error && <p className="error">{error}</p>}
       <ResultsTable scores={scores} />

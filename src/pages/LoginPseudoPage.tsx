@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import PageHeader from '../components/PageHeader';
 import { clearStoredPseudo, getStoredPseudo, setStoredPseudo } from '../lib/localSession';
 import { normalizePseudo, validatePseudo } from '../lib/validators';
 
@@ -21,10 +22,9 @@ export default function LoginPseudoPage() {
 
   return (
     <section className="grid two">
-      <div className="card">
-        <h1 className="hero-title gradient-text">Ton pseudo RP</h1>
+      <PageHeader title="Ton pseudo RP">
         <p className="lead">Il sert à mémoriser les véhicules que tu as déjà notés pendant l’événement.</p>
-      </div>
+      </PageHeader>
       <div className="panel">
         <form className="form" onSubmit={handleSubmit}>
           <label className="field">

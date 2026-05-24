@@ -18,7 +18,7 @@ export default function HomePage() {
       </div>
       <aside className="panel grid">
         <div className="badge ok"><QrCode size={16} /> Pensé pour QR code</div>
-        <h2 style={{ margin: 0 }}>Flux simple</h2>
+        <h2>Flux simple</h2>
         <p className="muted">1. Le visiteur scanne le QR code. 2. Il entre son pseudo. 3. Il vote véhicule par véhicule. 4. L’orga valide les résultats.</p>
         <div className="notice">
           Mode actuel : {isSupabaseConfigured() ? 'Supabase connecté, votes partagés.' : 'démo locale, à connecter à Supabase pour un vrai event.'}

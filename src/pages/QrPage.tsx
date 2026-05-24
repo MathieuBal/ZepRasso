@@ -29,7 +29,7 @@ export default function QrPage() {
     <section className="grid">
       <div className="card grid qr-card">
         <span className="badge ok">QR code du rasso</span>
-        <h1 className="hero-title gradient-text">Scanne pour voter</h1>
+        <h1 className="page-title gradient-text">Scanne pour voter</h1>
         <p className="lead">Affiche ou imprime ce QR code sur ton stand. Les visiteurs le scannent, entrent leur pseudo RP, puis votent.</p>
 
         <div className="qr-frame">
