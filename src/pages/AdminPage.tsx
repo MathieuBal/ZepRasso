@@ -51,6 +51,17 @@ export default function AdminPage() {
     }
   }
 
+  async function run(action: () => Promise<void>, successMessage?: string) {
+    setError(null);
+    setMessage(null);
+    try {
+      await action();
+      if (successMessage) setMessage(successMessage);
+    } catch (err) {
+      setError((err as Error).message || 'Une erreur est survenue.');
+    }
+  }
+
   async function handleAddVehicle(event: React.FormEvent) {
     event.preventDefault();
     setError(null);
@@ -58,46 +69,52 @@ export default function AdminPage() {
       setError('Nom du véhicule et propriétaire sont obligatoires.');
       return;
     }
-    await addVehicle({
-      name: form.name.trim(),
-      ownerName: form.ownerName.trim(),
-      category: form.category.trim(),
-      plate: form.plate.trim() || undefined,
-      imageUrl: form.imageUrl.trim() || undefined,
-      description: form.description.trim() || undefined,
-      isContestant: form.isContestant,
-      isDisqualified: form.isDisqualified,
-    });
-    setForm(initialForm);
-    setMessage('Véhicule ajouté.');
-    await refresh();
+    await run(async () => {
+      await addVehicle({
+        name: form.name.trim(),
+        ownerName: form.ownerName.trim(),
+        category: form.category.trim(),
+        plate: form.plate.trim() || undefined,
+        imageUrl: form.imageUrl.trim() || undefined,
+        description: form.description.trim() || undefined,
+        isContestant: form.isContestant,
+        isDisqualified: form.isDisqualified,
+      });
+      setForm(initialForm);
+      await refresh();
+    }, 'Véhicule ajouté.');
   }
 
   async function handleDelete(vehicleId: string) {
     if (!confirm('Supprimer ce véhicule et ses votes ?')) return;
-    await deleteVehicle(vehicleId);
-    setMessage('Véhicule supprimé.');
-    await refresh();
+    await run(async () => {
+      await deleteVehicle(vehicleId);
+      await refresh();
+    }, 'Véhicule supprimé.');
   }
 
   async function handleToggle(vehicle: Vehicle) {
-    await toggleVehicleDisqualification(vehicle);
-    await refresh();
+    await run(async () => {
+      await toggleVehicleDisqualification(vehicle);
+      await refresh();
+    });
   }
 
   async function handleResetVotes() {
     const confirmation = prompt('Tape RESET pour supprimer tous les votes de cet event.');
     if (confirmation !== 'RESET') return;
-    await resetVotes();
-    setMessage('Votes réinitialisés.');
-    await refresh();
+    await run(async () => {
+      await resetVotes();
+      await refresh();
+    }, 'Votes réinitialisés.');
   }
 
   async function handleResetDemo() {
     if (!confirm('Réinitialiser les données de démo locales ?')) return;
-    await resetDemoData();
-    setMessage('Données locales réinitialisées. Recharge la page si besoin.');
-    await refresh();
+    await run(async () => {
+      await resetDemoData();
+      await refresh();
+    }, 'Données locales réinitialisées. Recharge la page si besoin.');
   }
 
   function exportCsv() {
@@ -172,7 +189,7 @@ export default function AdminPage() {
 
         <div className="panel grid">
           <h2>Actions événement</h2>
-          <button className="button" onClick={refresh}><RefreshCw size={16} /> Rafraîchir</button>
+          <button className="button" onClick={() => run(refresh)}><RefreshCw size={16} /> Rafraîchir</button>
           <button className="button" onClick={exportCsv}>Exporter CSV</button>
           <button className="button danger" onClick={handleResetVotes}><Trash2 size={16} /> Supprimer les votes</button>
           {!isSupabaseConfigured && <button className="button danger" onClick={handleResetDemo}>Reset démo locale</button>}

@@ -10,7 +10,19 @@ type VehicleCardProps = {
 export default function VehicleCard({ vehicle, hasVoted = false }: VehicleCardProps) {
   return (
     <article className="card vehicle-card">
-      {vehicle.imageUrl ? <img className="vehicle-img" src={vehicle.imageUrl} alt={vehicle.name} /> : <div className="vehicle-img" />}
+      {vehicle.imageUrl ? (
+        <img
+          className="vehicle-img"
+          src={vehicle.imageUrl}
+          alt={vehicle.name}
+          loading="lazy"
+          onError={(event) => {
+            event.currentTarget.style.display = 'none';
+          }}
+        />
+      ) : (
+        <div className="vehicle-img" />
+      )}
       <div className="vehicle-body grid">
         <div className="actions" style={{ justifyContent: 'space-between' }}>
           <span className={hasVoted ? 'badge ok' : 'badge wait'}>
