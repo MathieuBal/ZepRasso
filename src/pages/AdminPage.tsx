@@ -1,5 +1,6 @@
-import { RefreshCw, Shield, Trash2 } from 'lucide-react';
+import { QrCode, RefreshCw, Shield, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import ResultsTable from '../components/ResultsTable';
 import { isAdminUnlocked, lockAdmin, unlockAdmin } from '../lib/localSession';
 import { addVehicle, deleteVehicle, getVehicles, getVotes, resetDemoData, resetVotes, toggleVehicleDisqualification } from '../lib/repository';
@@ -190,6 +191,7 @@ export default function AdminPage() {
         <div className="panel grid">
           <h2>Actions événement</h2>
           <button className="button" onClick={() => run(refresh)}><RefreshCw size={16} /> Rafraîchir</button>
+          <Link className="button" to="/qr"><QrCode size={16} /> QR code du rasso</Link>
           <button className="button" onClick={exportCsv}>Exporter CSV</button>
           <button className="button danger" onClick={handleResetVotes}><Trash2 size={16} /> Supprimer les votes</button>
           {!isSupabaseConfigured && <button className="button danger" onClick={handleResetDemo}>Reset démo locale</button>}
