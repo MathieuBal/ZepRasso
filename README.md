@@ -47,6 +47,25 @@ Les votes sont alors partagés entre tous les appareils et les photos
 importées sont uploadées dans Supabase Storage (visibles par tous).
 
 Important : ne jamais utiliser la clé `service_role` dans une app front.
+La clé `anon` est publique par conception ; la sécurité repose sur les
+policies (RLS), pas sur le secret de la clé.
+
+### Connexion organisateur (gestion des véhicules protégée)
+
+Les visiteurs votent librement, mais ajouter / supprimer / disqualifier un
+véhicule et supprimer des votes sont réservés à l'orga **authentifié**.
+Dans le dashboard Supabase, une seule fois :
+
+1. `Authentication` > `Providers` > `Email` : activé (par défaut).
+2. Désactiver l'inscription publique (`Allow new users to sign up`), pour
+   que seuls les comptes créés à la main aient les droits de gestion.
+3. `Authentication` > `Users` > `Add user` : ajouter l'e-mail de l'orga.
+4. `Authentication` > `Emails` > `Magic Link` : insérer `{{ .Token }}` dans
+   le template pour recevoir un **code à 6 chiffres** par e-mail.
+
+Ensuite, dans la page **Admin**, l'orga saisit son e-mail, reçoit un code et
+se connecte. En mode démo local (sans Supabase), l'accès reste protégé par
+le simple code `zepadmin`.
 
 ### Option avancée : configurer via le build
 
@@ -105,9 +124,9 @@ base: '/ZepRasso/'
 
 Cette V1 est volontairement simple :
 
-- admin protégé par code côté front, pas une sécurité forte ;
-- votes liés au pseudo, pas encore au compte Discord ;
-- politiques Supabase et Storage permissives pour faciliter le MVP.
+- en mode démo local, admin protégé par un simple code côté front ;
+- avec Supabase, gestion des véhicules réservée à l'orga authentifié (e-mail) ;
+- votes liés au pseudo (un visiteur peut changer de pseudo), pas encore au compte Discord.
 
 ## Roadmap possible
 

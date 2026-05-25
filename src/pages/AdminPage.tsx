@@ -1,6 +1,7 @@
 import { QrCode, RefreshCw, Shield, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import AdminLogin from '../components/AdminLogin';
 import ImagePicker from '../components/ImagePicker';
 import PageHeader from '../components/PageHeader';
 import ResultsTable from '../components/ResultsTable';
@@ -8,7 +9,7 @@ import SupabaseConfigPanel from '../components/SupabaseConfigPanel';
 import { isAdminUnlocked, lockAdmin, unlockAdmin } from '../lib/localSession';
 import { addVehicle, deleteVehicle, getVehicles, getVotes, resetDemoData, resetVotes, toggleVehicleDisqualification } from '../lib/repository';
 import { calculateVehicleScores } from '../lib/scoring';
-import { isSupabaseConfigured } from '../lib/supabase';
+import { getSupabase, isSupabaseConfigured } from '../lib/supabase';
 import type { Vehicle, Vote } from '../types';
 
 const adminCode = import.meta.env.VITE_ADMIN_CODE || 'zepadmin';
@@ -25,7 +26,9 @@ const initialForm = {
 };
 
 export default function AdminPage() {
-  const [unlocked, setUnlocked] = useState(isAdminUnlocked());
+  const supabaseMode = isSupabaseConfigured();
+  const [localUnlocked, setLocalUnlocked] = useState(isAdminUnlocked());
+  const [signedIn, setSignedIn] = useState(false);
   const [code, setCode] = useState('');
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [votes, setVotes] = useState<Vote[]>([]);
@@ -34,6 +37,8 @@ export default function AdminPage() {
   const [error, setError] = useState<string | null>(null);
   const scores = useMemo(() => calculateVehicleScores(vehicles, votes), [vehicles, votes]);
 
+  const unlocked = supabaseMode ? signedIn : localUnlocked;
+
   async function refresh() {
     const [loadedVehicles, loadedVotes] = await Promise.all([getVehicles(), getVotes()]);
     setVehicles(loadedVehicles);
@@ -41,14 +46,33 @@ export default function AdminPage() {
   }
 
   useEffect(() => {
+    if (!supabaseMode) return;
+    const supabase = getSupabase();
+    if (!supabase) return;
+    supabase.auth.getSession().then(({ data }) => setSignedIn(!!data.session));
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => setSignedIn(!!session));
+    return () => sub.subscription.unsubscribe();
+  }, [supabaseMode]);
+
+  useEffect(() => {
     if (unlocked) refresh().catch((err: Error) => setError(err.message));
   }, [unlocked]);
+
+  async function handleLock() {
+    if (supabaseMode) {
+      await getSupabase()?.auth.signOut();
+      setSignedIn(false);
+    } else {
+      lockAdmin();
+      setLocalUnlocked(false);
+    }
+  }
 
   function handleUnlock(event: React.FormEvent) {
     event.preventDefault();
     if (code === adminCode) {
       unlockAdmin();
-      setUnlocked(true);
+      setLocalUnlocked(true);
       setError(null);
     } else {
       setError('Code organisateur incorrect.');
@@ -146,18 +170,26 @@ export default function AdminPage() {
     return (
       <section className="grid two">
         <PageHeader title="Admin" badge={<><Shield size={16} /> Organisateur</>} badgeTone="wait">
-          <p className="lead">Accès simple pour gérer les véhicules et consulter les résultats. Code par défaut en démo : <strong>zepadmin</strong>.</p>
+          {supabaseMode ? (
+            <p className="lead">Connexion réservée à l'organisateur. Entre ton e-mail pour recevoir un code à usage unique.</p>
+          ) : (
+            <p className="lead">Accès simple pour gérer les véhicules et consulter les résultats. Code par défaut en démo : <strong>zepadmin</strong>.</p>
+          )}
         </PageHeader>
-        <div className="panel">
-          <form className="form" onSubmit={handleUnlock}>
-            <label className="field">
-              <span className="label">Code organisateur</span>
-              <input className="input" type="password" value={code} onChange={(event) => setCode(event.target.value)} />
-            </label>
-            {error && <p className="error">{error}</p>}
-            <button className="button primary" type="submit">Entrer</button>
-          </form>
-        </div>
+        {supabaseMode ? (
+          <AdminLogin />
+        ) : (
+          <div className="panel">
+            <form className="form" onSubmit={handleUnlock}>
+              <label className="field">
+                <span className="label">Code organisateur</span>
+                <input className="input" type="password" value={code} onChange={(event) => setCode(event.target.value)} />
+              </label>
+              {error && <p className="error">{error}</p>}
+              <button className="button primary" type="submit">Entrer</button>
+            </form>
+          </div>
+        )}
       </section>
     );
   }
@@ -167,7 +199,7 @@ export default function AdminPage() {
       <div className="card page-header">
         <div className="between">
           <span className="badge ok"><Shield size={16} /> Admin ouvert</span>
-          <button className="button ghost" onClick={() => { lockAdmin(); setUnlocked(false); }}>Verrouiller</button>
+          <button className="button ghost" onClick={handleLock}>{supabaseMode ? 'Se déconnecter' : 'Verrouiller'}</button>
         </div>
         <h1 className="page-title gradient-text">Gestion du rasso</h1>
         <p className="lead">Mode données : {isSupabaseConfigured() ? 'Supabase partagé' : 'démo locale navigateur'}</p>
