@@ -57,37 +57,66 @@ export default function VehicleVotePage() {
   if (!vehicle) return <p className="error">Véhicule introuvable.</p>;
 
   return (
-    <section className="grid two">
-      <div className="card vehicle-card">
+    <section className="grid" style={{ gap: 18 }}>
+      {/* Hero photo plein cadre avec infos en bas */}
+      <div
+        className="card vehicle-card"
+        style={{
+          position: 'relative',
+          minHeight: 320,
+          overflow: 'hidden',
+          padding: 0,
+        }}
+      >
         {vehicle.imageUrl ? (
-          <img
-            className="vehicle-img"
-            src={vehicle.imageUrl}
-            alt={vehicle.name}
-            loading="lazy"
-            onError={(event) => {
-              event.currentTarget.style.display = 'none';
+          <div
+            style={{
+              position: 'absolute', inset: 0,
+              backgroundImage: `url(${vehicle.imageUrl})`,
+              backgroundSize: 'cover', backgroundPosition: 'center',
             }}
           />
         ) : (
-          <div className="vehicle-img" />
+          <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg, #2a1547, #11052a)' }} />
         )}
-        <div className="vehicle-body grid">
-          <Link className="button ghost" to="/vehicles"><ArrowLeft size={16} /> Retour</Link>
-          <div>
-            <h1 className="page-title gradient-text">{vehicle.name}</h1>
-            <p className="lead">Propriétaire : <strong>{vehicle.ownerName}</strong></p>
-            <p className="muted">{vehicle.category}{vehicle.plate ? ` · Plaque ${vehicle.plate}` : ''}</p>
-            {vehicle.description && <p className="muted">{vehicle.description}</p>}
+        <div
+          style={{
+            position: 'absolute', inset: 0,
+            background:
+              'linear-gradient(180deg, rgba(10,2,20,0.4) 0%, transparent 30%, rgba(10,2,20,0.92) 100%)',
+          }}
+        />
+        <div style={{ position: 'absolute', top: 16, left: 16 }}>
+          <Link className="button ghost" to="/vehicles" style={{ background: 'rgba(10,2,20,0.55)', backdropFilter: 'blur(10px)' }}>
+            <ArrowLeft size={16} /> Retour
+          </Link>
+        </div>
+        <div style={{ position: 'absolute', bottom: 20, left: 20, right: 20 }}>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+            <span className="eyebrow" style={{ background: 'rgba(10,2,20,0.55)', backdropFilter: 'blur(8px)', padding: '4px 8px', borderRadius: 4 }}>
+              {vehicle.category}
+            </span>
+            {vehicle.plate && <span className="plate">{vehicle.plate}</span>}
+            {vehicle.isDisqualified && <span className="badge closed">Disqualifié</span>}
           </div>
+          <h1 className="page-title">{vehicle.name}</h1>
+          <p className="lead" style={{ margin: '8px 0 0' }}>
+            par <strong>{vehicle.ownerName}</strong>
+          </p>
+          {vehicle.description && (
+            <p className="muted" style={{ marginTop: 6, maxWidth: 640 }}>{vehicle.description}</p>
+          )}
         </div>
       </div>
+
       <div className="panel grid">
-        <span className={vote ? 'badge ok' : 'badge wait'}>{vote ? 'Vote déjà enregistré' : 'Vote à faire'}</span>
-        <h2>Note ce véhicule</h2>
+        <span className={vote ? 'badge ok' : 'badge wait'}>
+          {vote ? '✓ Vote déjà enregistré · tu peux le modifier' : 'Note ce véhicule sur 5 critères'}
+        </span>
+        <h2>{vote ? 'Modifier mon vote' : 'Mon vote'}</h2>
         {vehicle.isDisqualified && <p className="error">Ce véhicule est disqualifié, le vote est désactivé.</p>}
         {error && <p className="error">{error}</p>}
-        {saved && <p className="success">Vote enregistré, retour à la liste...</p>}
+        {saved && <p className="success">Vote enregistré, retour à la liste…</p>}
         <VoteForm initialVote={vote} disabled={vehicle.isDisqualified} onSubmit={handleSubmit} />
       </div>
     </section>
