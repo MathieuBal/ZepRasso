@@ -1,5 +1,6 @@
 import express from 'express';
 import os from 'node:os';
+import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -22,6 +23,7 @@ const DB_FILE = join(DATA_DIR, 'db.json');
 const PORT = Number(process.env.PORT) || 4173;
 const ADMIN_CODE = process.env.ADMIN_CODE || 'zepadmin';
 const EVENT_ID = 'rasso';
+const WANT_TUNNEL = process.argv.includes('--tunnel') || process.env.TUNNEL === '1';
 
 mkdirSync(PHOTOS_DIR, { recursive: true });
 
@@ -239,6 +241,48 @@ function lanIp() {
   return 'localhost';
 }
 
+function startTunnel() {
+  if (ADMIN_CODE === 'zepadmin') {
+    console.warn('\n  /!\\ Le code admin est encore "zepadmin" alors que l\'app va etre publique.');
+    console.warn('      Relance avec : ADMIN_CODE="ton-code" npm run share\n');
+  }
+  console.log('  Ouverture du tunnel public (cloudflared)...');
+  const child = spawn('cloudflared', ['tunnel', '--url', `http://localhost:${PORT}`, '--no-autoupdate'], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let announced = false;
+  const scan = (chunk) => {
+    const match = /https:\/\/[a-z0-9-]+\.trycloudflare\.com/.exec(String(chunk));
+    if (match && !announced) {
+      announced = true;
+      console.log('\n  ====================================================');
+      console.log('   Lien public a partager (Discord, etc.) :');
+      console.log(`   ${match[0]}`);
+      console.log('  ====================================================');
+      console.log('   Tant que cette fenetre reste ouverte, le lien marche.\n');
+    }
+  };
+  child.stdout.on('data', scan);
+  child.stderr.on('data', scan);
+  child.on('error', (err) => {
+    if (err.code === 'ENOENT') {
+      console.error('\n  cloudflared introuvable. Installe-le une fois, puis relance "npm run share".');
+      console.error('    macOS    : brew install cloudflared');
+      console.error('    Windows  : winget install --id Cloudflare.cloudflared');
+      console.error('    Linux    : https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/');
+      console.error('\n  En attendant, l\'app reste accessible en local sur ce PC.\n');
+    } else {
+      console.error(`  Tunnel: ${err.message}`);
+    }
+  });
+  const stop = () => {
+    child.kill();
+    process.exit(0);
+  };
+  process.on('SIGINT', stop);
+  process.on('SIGTERM', stop);
+}
+
 if (!existsSync(join(DIST_DIR, 'index.html'))) {
   console.warn('\n  Attention : le dossier dist/ est vide. Lance "npm run build" avant, ou utilise "npm start".\n');
 }
@@ -247,7 +291,9 @@ app.listen(PORT, '0.0.0.0', () => {
   const ip = lanIp();
   console.log('\n  ZepRasso tourne en local');
   console.log(`  Sur ce PC    : http://localhost:${PORT}`);
-  console.log(`  Telephones   : http://${ip}:${PORT}   (memes WiFi que le PC)`);
+  console.log(`  Meme WiFi    : http://${ip}:${PORT}`);
   console.log(`  Code admin   : ${ADMIN_CODE}`);
-  console.log('\n  Donnees enregistrees dans data/db.json . Ctrl+C pour arreter.\n');
+  console.log('\n  Donnees enregistrees dans data/db.json . Ctrl+C pour arreter.');
+  if (WANT_TUNNEL) startTunnel();
+  else console.log('  Pour rendre l\'app accessible a distance : npm run share\n');
 });

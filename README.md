@@ -1,9 +1,10 @@
 # ZepRasso
 
 Application web légère pour organiser un rassemblement de véhicules GTA RP avec
-vote des visiteurs. **100 % local** : elle tourne sur ton PC, les visiteurs
-votent depuis leur téléphone sur le même WiFi, et les données sont enregistrées
-dans un simple fichier sur le disque.
+vote des visiteurs. **Locale d'abord** : elle tourne sur ton PC et les données
+sont enregistrées dans un simple fichier sur le disque. Pour un event en ligne,
+un tunnel donne une URL publique à partager pour que tout le monde vote à
+distance, sans rien héberger.
 
 ## Principe
 
@@ -30,14 +31,48 @@ npm start
 ```
 
 - **Sur ton PC** : ouvre l'adresse `localhost`.
-- **Pour les téléphones** : ils doivent être sur le **même WiFi** que le PC, puis
-  ouvrir l'adresse réseau `http://192.168.x.x:4173`. Le QR code généré dans
-  **Admin → QR code** pointe automatiquement sur cette adresse si tu ouvres
-  l'app via l'adresse réseau.
+- **Sur le même WiFi** (téléphones d'à côté) : ouvre l'adresse réseau
+  `http://192.168.x.x:4173`.
 
-> Astuce : pare-feu. À la première ouverture, Windows/macOS peut demander
-> d'autoriser Node à accéder au réseau local — accepte, sinon les téléphones
-> ne pourront pas se connecter.
+`npm start` = usage local uniquement. Pour que des gens **à distance** se
+connectent (event en ligne, chacun chez soi), voir la section suivante.
+
+## Partager l'app à distance (event en ligne)
+
+Si les participants ne sont pas sur ton réseau, on ouvre un **tunnel** : une URL
+publique `https://...` qui pointe vers ton PC. L'app et les données restent chez
+toi, tu partages juste le lien (dans le Discord par exemple).
+
+1. **Installer l'outil cloudflared, une seule fois** (gratuit, sans compte) :
+   - macOS : `brew install cloudflared`
+   - Windows : `winget install --id Cloudflare.cloudflared`
+   - Linux / autre : voir la
+     [page de téléchargement Cloudflare](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/).
+
+2. **Changer le code admin** (obligatoire dès que c'est public) puis lancer :
+
+   ```bash
+   ADMIN_CODE="ton-code-secret" npm run share
+   ```
+
+   Sur Windows (PowerShell) :
+
+   ```powershell
+   $env:ADMIN_CODE="ton-code-secret"; npm run share
+   ```
+
+3. La console affiche un **lien public** à copier dans le Discord :
+
+   ```txt
+   Lien public a partager (Discord, etc.) :
+   https://xxxx-xxxx.trycloudflare.com
+   ```
+
+   Tant que la fenêtre reste ouverte, le lien marche. À la fermeture, le lien
+   est coupé. L'URL **change à chaque lancement**, pense à repartager le lien.
+
+> Note : ton PC doit rester allumé pendant tout l'event, et le trafic (photos
+> comprises) passe par ta connexion.
 
 ### Code organisateur
 
