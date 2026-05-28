@@ -1,6 +1,5 @@
 import { ArrowRight, QrCode, Trophy } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { isSupabaseConfigured } from '../lib/supabase';
 
 export default function HomePage() {
   return (
@@ -21,7 +20,7 @@ export default function HomePage() {
         <h2>Flux simple</h2>
         <p className="muted">1. Le visiteur scanne le QR code. 2. Il entre son pseudo. 3. Il vote véhicule par véhicule. 4. L’orga valide les résultats.</p>
         <div className="notice">
-          Mode actuel : {isSupabaseConfigured() ? 'Supabase connecté, votes partagés.' : 'démo locale, à connecter à Supabase pour un vrai event.'}
+          Les votes sont enregistrés en direct sur le PC de l'orga. Tout le monde vote depuis son téléphone sur le même WiFi.
         </div>
         <Link className="button" to="/results"><Trophy size={16} /> Voir les résultats</Link>
       </aside>

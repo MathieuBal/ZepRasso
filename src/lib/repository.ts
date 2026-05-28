@@ -1,212 +1,76 @@
-import { demoEvent, demoVehicles, demoVotes } from './mockData';
-import { safeStorage, safeUuid } from './storage';
-import { getActiveConfig, getSupabase } from './supabase';
+import { getAdminCode } from './localSession';
 import type { RassoEvent, Vehicle, Vote, VoteInput } from '../types';
 
-const LOCAL_VEHICLES_KEY = 'zeprasso_demo_vehicles';
-const LOCAL_VOTES_KEY = 'zeprasso_demo_votes';
-const DEFAULT_SUPABASE_EVENT_ID = '00000000-0000-0000-0000-000000000001';
-const PHOTO_BUCKET = 'vehicle-photos';
+export const EVENT_ID = 'rasso';
 
 export function getConfiguredEventId(): string {
-  const config = getActiveConfig();
-  if (config) return config.eventId || DEFAULT_SUPABASE_EVENT_ID;
-  return demoEvent.id;
+  return EVENT_ID;
 }
 
-async function uploadPhotoIfNeeded(imageUrl?: string): Promise<string | undefined> {
-  const supabase = getSupabase();
-  if (!imageUrl || !imageUrl.startsWith('data:') || !supabase) return imageUrl;
-  const blob = await (await fetch(imageUrl)).blob();
-  const path = `${getConfiguredEventId()}/${safeUuid()}.jpg`;
-  const { error } = await supabase.storage.from(PHOTO_BUCKET).upload(path, blob, {
-    contentType: blob.type || 'image/jpeg',
-    upsert: false,
+async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const response = await fetch(`/api${path}`, {
+    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+    ...options,
   });
-  if (error) throw new Error(`Upload photo: ${error.message}`);
-  return supabase.storage.from(PHOTO_BUCKET).getPublicUrl(path).data.publicUrl;
-}
-
-function clone<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
-}
-
-function readLocal<T>(key: string, fallback: T): T {
-  const raw = safeStorage.getItem(key);
-  if (!raw) return clone(fallback);
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    return clone(fallback);
+  if (!response.ok) {
+    let message = `Erreur réseau (${response.status})`;
+    try {
+      const body = await response.json();
+      if (body?.error) message = body.error;
+    } catch {
+      // réponse sans corps JSON, on garde le message générique
+    }
+    throw new Error(message);
   }
+  if (response.status === 204) return undefined as T;
+  return (await response.json()) as T;
 }
 
-function writeLocal<T>(key: string, value: T): void {
-  safeStorage.setItem(key, JSON.stringify(value));
+function adminHeaders(): Record<string, string> {
+  return { 'x-admin-code': getAdminCode() || '' };
 }
 
-function mapVehicleFromDb(row: Record<string, unknown>): Vehicle {
-  return {
-    id: String(row.id),
-    eventId: String(row.event_id),
-    name: String(row.name),
-    ownerName: String(row.owner_name),
-    category: String(row.category || ''),
-    plate: row.plate ? String(row.plate) : undefined,
-    imageUrl: row.image_url ? String(row.image_url) : undefined,
-    description: row.description ? String(row.description) : undefined,
-    isContestant: Boolean(row.is_contestant),
-    isDisqualified: Boolean(row.is_disqualified),
-    createdAt: String(row.created_at),
-  };
+export function getEvent(): Promise<RassoEvent> {
+  return api<RassoEvent>('/event');
 }
 
-function mapVoteFromDb(row: Record<string, unknown>): Vote {
-  return {
-    id: String(row.id),
-    eventId: String(row.event_id),
-    vehicleId: String(row.vehicle_id),
-    voterPseudo: String(row.voter_pseudo),
-    aesthetics: Number(row.aesthetics),
-    coherence: Number(row.coherence),
-    originality: Number(row.originality),
-    details: Number(row.details),
-    rpPresentation: Number(row.rp_presentation),
-    createdAt: String(row.created_at),
-    updatedAt: String(row.updated_at),
-  };
+export function getVehicles(): Promise<Vehicle[]> {
+  return api<Vehicle[]>('/vehicles');
 }
 
-export async function getEvent(): Promise<RassoEvent> {
-  const supabase = getSupabase();
-  if (!supabase) return demoEvent;
-  const { data, error } = await supabase.from('events').select('*').eq('id', getConfiguredEventId()).single();
-  if (error || !data) throw new Error(error?.message || 'Événement introuvable');
-  return {
-    id: String(data.id),
-    name: String(data.name),
-    status: data.status as RassoEvent['status'],
-    createdAt: String(data.created_at),
-  };
-}
-
-export async function getVehicles(): Promise<Vehicle[]> {
-  const supabase = getSupabase();
-  if (!supabase) {
-    return readLocal<Vehicle[]>(LOCAL_VEHICLES_KEY, demoVehicles);
-  }
-  const { data, error } = await supabase.from('vehicles').select('*').eq('event_id', getConfiguredEventId()).order('created_at');
-  if (error) throw new Error(error.message);
-  return (data || []).map(mapVehicleFromDb);
-}
-
-export async function getVotes(): Promise<Vote[]> {
-  const supabase = getSupabase();
-  if (!supabase) {
-    return readLocal<Vote[]>(LOCAL_VOTES_KEY, demoVotes);
-  }
-  const { data, error } = await supabase.from('votes').select('*').eq('event_id', getConfiguredEventId());
-  if (error) throw new Error(error.message);
-  return (data || []).map(mapVoteFromDb);
+export function getVotes(): Promise<Vote[]> {
+  return api<Vote[]>('/votes');
 }
 
 export async function upsertVote(input: VoteInput): Promise<void> {
-  const supabase = getSupabase();
-  if (!supabase) {
-    const votes = readLocal<Vote[]>(LOCAL_VOTES_KEY, demoVotes);
-    const existingIndex = votes.findIndex(
-      (vote) => vote.eventId === input.eventId && vote.vehicleId === input.vehicleId && vote.voterPseudo.toLowerCase() === input.voterPseudo.toLowerCase(),
-    );
-    const now = new Date().toISOString();
-    const vote: Vote = {
-      ...input,
-      id: existingIndex >= 0 ? votes[existingIndex].id : safeUuid(),
-      createdAt: existingIndex >= 0 ? votes[existingIndex].createdAt : now,
-      updatedAt: now,
-    };
-    if (existingIndex >= 0) votes[existingIndex] = vote;
-    else votes.push(vote);
-    writeLocal(LOCAL_VOTES_KEY, votes);
-    return;
-  }
-
-  const { error } = await supabase.from('votes').upsert(
-    {
-      event_id: input.eventId,
-      vehicle_id: input.vehicleId,
-      voter_pseudo: input.voterPseudo,
-      aesthetics: input.aesthetics,
-      coherence: input.coherence,
-      originality: input.originality,
-      details: input.details,
-      rp_presentation: input.rpPresentation,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: 'event_id,vehicle_id,voter_pseudo' },
-  );
-  if (error) throw new Error(error.message);
+  await api('/votes', { method: 'POST', body: JSON.stringify(input) });
 }
 
 export async function addVehicle(vehicle: Omit<Vehicle, 'id' | 'eventId' | 'createdAt'>): Promise<void> {
-  const supabase = getSupabase();
-  if (!supabase) {
-    const vehicles = readLocal<Vehicle[]>(LOCAL_VEHICLES_KEY, demoVehicles);
-    vehicles.push({ ...vehicle, id: safeUuid(), eventId: getConfiguredEventId(), createdAt: new Date().toISOString() });
-    writeLocal(LOCAL_VEHICLES_KEY, vehicles);
-    return;
-  }
-
-  const imageUrl = await uploadPhotoIfNeeded(vehicle.imageUrl);
-
-  const { error } = await supabase.from('vehicles').insert({
-    event_id: getConfiguredEventId(),
-    name: vehicle.name,
-    owner_name: vehicle.ownerName,
-    category: vehicle.category,
-    plate: vehicle.plate,
-    image_url: imageUrl,
-    description: vehicle.description,
-    is_contestant: vehicle.isContestant,
-    is_disqualified: vehicle.isDisqualified,
-  });
-  if (error) throw new Error(error.message);
+  await api('/vehicles', { method: 'POST', headers: adminHeaders(), body: JSON.stringify(vehicle) });
 }
 
 export async function deleteVehicle(vehicleId: string): Promise<void> {
-  const supabase = getSupabase();
-  if (!supabase) {
-    writeLocal(LOCAL_VEHICLES_KEY, readLocal<Vehicle[]>(LOCAL_VEHICLES_KEY, demoVehicles).filter((vehicle) => vehicle.id !== vehicleId));
-    writeLocal(LOCAL_VOTES_KEY, readLocal<Vote[]>(LOCAL_VOTES_KEY, demoVotes).filter((vote) => vote.vehicleId !== vehicleId));
-    return;
-  }
-  const { error } = await supabase.from('vehicles').delete().eq('id', vehicleId);
-  if (error) throw new Error(error.message);
+  await api(`/vehicles/${vehicleId}`, { method: 'DELETE', headers: adminHeaders() });
 }
 
 export async function toggleVehicleDisqualification(vehicle: Vehicle): Promise<void> {
-  const supabase = getSupabase();
-  if (!supabase) {
-    const vehicles = readLocal<Vehicle[]>(LOCAL_VEHICLES_KEY, demoVehicles).map((item) =>
-      item.id === vehicle.id ? { ...item, isDisqualified: !item.isDisqualified } : item,
-    );
-    writeLocal(LOCAL_VEHICLES_KEY, vehicles);
-    return;
-  }
-  const { error } = await supabase.from('vehicles').update({ is_disqualified: !vehicle.isDisqualified }).eq('id', vehicle.id);
-  if (error) throw new Error(error.message);
+  await api(`/vehicles/${vehicle.id}`, {
+    method: 'PATCH',
+    headers: adminHeaders(),
+    body: JSON.stringify({ isDisqualified: !vehicle.isDisqualified }),
+  });
 }
 
 export async function resetVotes(): Promise<void> {
-  const supabase = getSupabase();
-  if (!supabase) {
-    writeLocal(LOCAL_VOTES_KEY, []);
-    return;
-  }
-  const { error } = await supabase.from('votes').delete().eq('event_id', getConfiguredEventId());
-  if (error) throw new Error(error.message);
+  await api('/votes', { method: 'DELETE', headers: adminHeaders() });
 }
 
-export async function resetDemoData(): Promise<void> {
-  safeStorage.removeItem(LOCAL_VEHICLES_KEY);
-  safeStorage.removeItem(LOCAL_VOTES_KEY);
+export async function verifyAdminCode(code: string): Promise<boolean> {
+  try {
+    await api('/admin/login', { method: 'POST', body: JSON.stringify({ code }) });
+    return true;
+  } catch {
+    return false;
+  }
 }
