@@ -1,7 +1,8 @@
 import { Download } from 'lucide-react';
 import { QRCodeCanvas, QRCodeSVG } from 'qrcode.react';
 import { useRef } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
+import { isAdminUnlocked } from '../lib/localSession';
 
 const TRANSPARENT = 'rgba(0,0,0,0)';
 const EXPORT_SIZE = 1024;
@@ -24,6 +25,8 @@ export default function QrPage() {
     link.download = `zeprasso-qr-${suffix}.png`;
     link.click();
   }
+
+  if (!isAdminUnlocked()) return <Navigate to="/admin" replace />;
 
   return (
     <section className="grid">
