@@ -9,15 +9,17 @@ import {
   addVehicle,
   deleteVehicle,
   downloadBackup,
+  getEvent,
   getVehicles,
   getVotes,
   resetVotes,
   restoreBackup,
   toggleVehicleDisqualification,
+  updateEvent,
   verifyAdminCode,
 } from '../lib/repository';
 import { calculateVehicleScores } from '../lib/scoring';
-import type { Vehicle, Vote } from '../types';
+import type { RassoEvent, Vehicle, Vote } from '../types';
 
 const initialForm = {
   name: '',
@@ -33,6 +35,8 @@ const initialForm = {
 export default function AdminPage() {
   const [unlocked, setUnlocked] = useState(isAdminUnlocked());
   const [code, setCode] = useState('');
+  const [rassoEvent, setRassoEvent] = useState<RassoEvent | null>(null);
+  const [eventName, setEventName] = useState('');
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [votes, setVotes] = useState<Vote[]>([]);
   const [form, setForm] = useState(initialForm);
@@ -42,7 +46,9 @@ export default function AdminPage() {
   const scores = useMemo(() => calculateVehicleScores(vehicles, votes), [vehicles, votes]);
 
   async function refresh() {
-    const [loadedVehicles, loadedVotes] = await Promise.all([getVehicles(), getVotes()]);
+    const [loadedEvent, loadedVehicles, loadedVotes] = await Promise.all([getEvent(), getVehicles(), getVotes()]);
+    setRassoEvent(loadedEvent);
+    setEventName(loadedEvent.name);
     setVehicles(loadedVehicles);
     setVotes(loadedVotes);
   }
@@ -77,6 +83,28 @@ export default function AdminPage() {
     } catch (err) {
       setError((err as Error).message || 'Une erreur est survenue.');
     }
+  }
+
+  async function handleRenameEvent(formEvent: React.FormEvent) {
+    formEvent.preventDefault();
+    if (!eventName.trim()) {
+      setError("Le nom de l'événement ne peut pas être vide.");
+      return;
+    }
+    await run(async () => {
+      await updateEvent({ name: eventName.trim() });
+      await refresh();
+    }, 'Nom de l\'événement mis à jour.');
+  }
+
+  async function handleToggleStatus() {
+    if (!rassoEvent) return;
+    const next = rassoEvent.status === 'closed' ? 'open' : 'closed';
+    if (next === 'closed' && !confirm('Fermer les votes ? Les visiteurs ne pourront plus voter et le classement devient définitif.')) return;
+    await run(async () => {
+      await updateEvent({ status: next });
+      await refresh();
+    }, next === 'closed' ? 'Votes fermés.' : 'Votes rouverts.');
   }
 
   async function handleAddVehicle(event: React.FormEvent) {
@@ -212,6 +240,31 @@ export default function AdminPage() {
         <p className="lead">Ajoute les véhicules, suis les votes en direct et exporte le classement final.</p>
         {message && <p className="success">{message}</p>}
         {error && <p className="error">{error}</p>}
+      </div>
+
+      <div className="panel grid">
+        <div className="between">
+          <div>
+            <p className="section-eyebrow">Événement</p>
+            <h2>{rassoEvent?.name || 'Rasso'}</h2>
+          </div>
+          <span className={rassoEvent?.status === 'closed' ? 'badge closed' : 'badge ok'}>
+            {rassoEvent?.status === 'closed' ? 'Votes fermés' : 'Votes ouverts'}
+          </span>
+        </div>
+        <form className="form" onSubmit={handleRenameEvent}>
+          <label className="field">
+            <span className="label">Nom de l'événement</span>
+            <input className="input" value={eventName} onChange={(e) => setEventName(e.target.value)} placeholder="Ex : Car Meet RP - Été" />
+          </label>
+          <div className="actions">
+            <button className="button" type="submit">Renommer</button>
+            <button className="button primary" type="button" onClick={handleToggleStatus}>
+              {rassoEvent?.status === 'closed' ? 'Rouvrir les votes' : 'Fermer les votes'}
+            </button>
+          </div>
+        </form>
+        <p className="muted">Quand les votes sont fermés, les participants ne peuvent plus voter et le classement devient définitif.</p>
       </div>
 
       <div className="grid two">

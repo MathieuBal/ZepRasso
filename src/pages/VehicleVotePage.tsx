@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import VoteForm from '../components/VoteForm';
 import { getStoredPseudo } from '../lib/localSession';
-import { getConfiguredEventId, getVehicles, getVotes, upsertVote } from '../lib/repository';
+import { getConfiguredEventId, getEvent, getVehicles, getVotes, upsertVote } from '../lib/repository';
 import { findUserVote } from '../lib/scoring';
 import type { Vehicle, Vote } from '../types';
 
@@ -13,13 +13,15 @@ export default function VehicleVotePage() {
   const pseudo = getStoredPseudo();
   const [vehicle, setVehicle] = useState<Vehicle | null>(null);
   const [vote, setVote] = useState<Vote | undefined>();
+  const [votesClosed, setVotesClosed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([getVehicles(), getVotes()])
-      .then(([vehicles, votes]) => {
+    Promise.all([getEvent(), getVehicles(), getVotes()])
+      .then(([event, vehicles, votes]) => {
+        setVotesClosed(event.status === 'closed');
         const currentVehicle = vehicles.find((item) => item.id === vehicleId) || null;
         setVehicle(currentVehicle);
         if (currentVehicle) setVote(findUserVote(votes, currentVehicle.id, pseudo));
@@ -85,10 +87,11 @@ export default function VehicleVotePage() {
       <div className="panel grid">
         <span className={vote ? 'badge ok' : 'badge wait'}>{vote ? 'Vote déjà enregistré' : 'Vote à faire'}</span>
         <h2>Note ce véhicule</h2>
+        {votesClosed && <p className="notice">Les votes sont fermés. Tu peux consulter le <Link to="/results">classement final</Link>.</p>}
         {vehicle.isDisqualified && <p className="error">Ce véhicule est disqualifié, le vote est désactivé.</p>}
         {error && <p className="error">{error}</p>}
         {saved && <p className="success">Vote enregistré, retour à la liste...</p>}
-        <VoteForm initialVote={vote} disabled={vehicle.isDisqualified} onSubmit={handleSubmit} />
+        <VoteForm initialVote={vote} disabled={vehicle.isDisqualified || votesClosed} onSubmit={handleSubmit} />
       </div>
     </section>
   );

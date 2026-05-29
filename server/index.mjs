@@ -270,6 +270,10 @@ app.post('/api/admin/login', (req, res) => {
 });
 
 app.post('/api/votes', (req, res) => {
+  if (db.event.status === 'closed') {
+    res.status(403).json({ error: 'Les votes sont fermés.' });
+    return;
+  }
   const body = req.body || {};
   const voterPseudo = String(body.voterPseudo || '').trim();
   const vehicleId = String(body.vehicleId || '');
@@ -307,6 +311,18 @@ app.post('/api/votes', (req, res) => {
   }
   saveDb();
   res.json({ ok: true });
+});
+
+app.patch('/api/event', requireAdmin, (req, res) => {
+  const body = req.body || {};
+  if (typeof body.name === 'string' && body.name.trim()) {
+    db.event.name = body.name.trim();
+  }
+  if (typeof body.status === 'string' && ['open', 'closed'].includes(body.status)) {
+    db.event.status = body.status;
+  }
+  saveDb();
+  res.json(db.event);
 });
 
 app.post('/api/vehicles', requireAdmin, (req, res) => {

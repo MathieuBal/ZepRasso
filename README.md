@@ -9,8 +9,9 @@ distance, sans rien héberger.
 ## Principe
 
 - L'organisateur ajoute les véhicules en compétition (page Admin).
-- Les visiteurs scannent le QR code, entrent leur pseudo RP, puis votent.
+- Les visiteurs ouvrent le lien (ou scannent le QR code), entrent leur pseudo RP, puis votent.
 - Chaque visiteur note 5 critères de 0 à 10.
+- L'organisateur peut renommer l'événement et **fermer les votes** pour figer le classement.
 - L'admin consulte le classement, exporte en CSV et peut reset les votes.
 
 ## Lancer l'outil

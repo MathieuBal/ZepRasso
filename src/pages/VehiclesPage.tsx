@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import VehicleCard from '../components/VehicleCard';
 import { getStoredPseudo } from '../lib/localSession';
-import { getVehicles, getVotes } from '../lib/repository';
+import { getEvent, getVehicles, getVotes } from '../lib/repository';
 import { findUserVote } from '../lib/scoring';
 import type { Vehicle, Vote } from '../types';
 
@@ -11,12 +11,14 @@ export default function VehiclesPage() {
   const pseudo = getStoredPseudo();
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [votes, setVotes] = useState<Vote[]>([]);
+  const [votesClosed, setVotesClosed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([getVehicles(), getVotes()])
-      .then(([loadedVehicles, loadedVotes]) => {
+    Promise.all([getEvent(), getVehicles(), getVotes()])
+      .then(([event, loadedVehicles, loadedVotes]) => {
+        setVotesClosed(event.status === 'closed');
         setVehicles(loadedVehicles);
         setVotes(loadedVotes);
       })
@@ -29,7 +31,9 @@ export default function VehiclesPage() {
   return (
     <section className="grid">
       <PageHeader title="Véhicules en course" badge={pseudo ? `Pseudo : ${pseudo}` : 'Pseudo requis'} badgeTone={pseudo ? 'ok' : 'wait'}>
-        {pseudo ? (
+        {votesClosed ? (
+          <p className="notice">Les votes sont fermés. Découvre le <Link to="/results"><strong>classement final</strong></Link>.</p>
+        ) : pseudo ? (
           <p className="lead">Tu as voté pour {votedCount}/{vehicles.length} véhicules.</p>
         ) : (
           <p className="notice">Entre ton pseudo avant de voter. <Link to="/login"><strong>Définir mon pseudo</strong></Link></p>
