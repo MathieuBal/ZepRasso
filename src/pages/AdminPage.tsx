@@ -1,5 +1,5 @@
-import { QrCode, RefreshCw, Shield, Trash2 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { Download, QrCode, RefreshCw, Shield, Trash2, Upload } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import ImagePicker from '../components/ImagePicker';
 import PageHeader from '../components/PageHeader';
@@ -8,9 +8,11 @@ import { isAdminUnlocked, lockAdmin, unlockAdmin } from '../lib/localSession';
 import {
   addVehicle,
   deleteVehicle,
+  downloadBackup,
   getVehicles,
   getVotes,
   resetVotes,
+  restoreBackup,
   toggleVehicleDisqualification,
   verifyAdminCode,
 } from '../lib/repository';
@@ -36,6 +38,7 @@ export default function AdminPage() {
   const [form, setForm] = useState(initialForm);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const backupInputRef = useRef<HTMLInputElement>(null);
   const scores = useMemo(() => calculateVehicleScores(vehicles, votes), [vehicles, votes]);
 
   async function refresh() {
@@ -123,6 +126,40 @@ export default function AdminPage() {
     }, 'Votes réinitialisés.');
   }
 
+  async function handleDownloadBackup() {
+    await run(async () => {
+      const blob = await downloadBackup();
+      const pad = (value: number) => String(value).padStart(2, '0');
+      const now = new Date();
+      const name = `zeprasso-sauvegarde-${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}.json`;
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = name;
+      link.click();
+      URL.revokeObjectURL(url);
+    }, 'Sauvegarde téléchargée.');
+  }
+
+  async function handleRestoreFile(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    if (!confirm('Restaurer cette sauvegarde ? Les données actuelles seront remplacées (une sauvegarde de sécurité est créée avant).')) return;
+    await run(async () => {
+      const text = await file.text();
+      let data: unknown;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error("Fichier illisible : ce n'est pas un JSON valide.");
+      }
+      const result = await restoreBackup(data);
+      await refresh();
+      setMessage(`Sauvegarde restaurée : ${result.vehicles} véhicule(s), ${result.votes} vote(s).`);
+    });
+  }
+
   function exportCsv() {
     const rows = [
       ['rang', 'vehicule', 'proprietaire', 'votes', 'moyenne'],
@@ -199,6 +236,12 @@ export default function AdminPage() {
           <button className="button" onClick={() => run(refresh)}><RefreshCw size={16} /> Rafraîchir</button>
           <Link className="button" to="/qr"><QrCode size={16} /> QR code du rasso</Link>
           <button className="button" onClick={exportCsv}>Exporter CSV</button>
+          <hr className="divider" />
+          <p className="section-eyebrow">Sauvegarde</p>
+          <button className="button" onClick={handleDownloadBackup}><Download size={16} /> Télécharger une sauvegarde</button>
+          <button className="button" onClick={() => backupInputRef.current?.click()}><Upload size={16} /> Restaurer une sauvegarde</button>
+          <input ref={backupInputRef} type="file" accept="application/json,.json" hidden onChange={handleRestoreFile} />
+          <p className="muted">Des sauvegardes automatiques sont aussi gardées sur le PC (dossier <code>data/backups/</code>).</p>
           <hr className="divider" />
           <p className="section-eyebrow">Zone sensible</p>
           <button className="button danger" onClick={handleResetVotes}><Trash2 size={16} /> Supprimer les votes</button>

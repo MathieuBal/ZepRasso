@@ -91,10 +91,33 @@ Tout est stocké sur le PC dans le dossier `data/` :
 
 - `data/db.json` : l'événement, les véhicules et les votes.
 - `data/photos/` : les photos importées des véhicules.
+- `data/backups/` : sauvegardes automatiques (voir ci-dessous).
 
 Ce dossier n'est pas versionné (`.gitignore`). Pour **sauvegarder** ou
-**transférer** un rasso, il suffit de copier le dossier `data/`. Pour repartir
-de zéro, supprime-le : il sera recréé vide au prochain lancement.
+**transférer** un rasso complet (photos comprises), il suffit de copier le
+dossier `data/`. Pour repartir de zéro, supprime-le : il sera recréé vide au
+prochain lancement.
+
+## Sauvegardes et sécurité des données
+
+L'écriture de `db.json` est **atomique** (écriture dans un fichier temporaire
+puis remplacement), donc une coupure de courant ne corrompt pas le fichier.
+
+En plus, des sauvegardes sont créées automatiquement dans `data/backups/` :
+au démarrage, après chaque modification (regroupées toutes les ~15 s) et avant
+chaque opération sensible (reset des votes, suppression, restauration). Les 40
+dernières sont conservées.
+
+Si `db.json` devient illisible, au prochain démarrage le serveur met le fichier
+abîmé de côté (`db.corrupt-…json`) et **restaure automatiquement** la dernière
+sauvegarde.
+
+Depuis la page **Admin**, l'organisateur peut aussi :
+
+- **Télécharger une sauvegarde** : récupère un fichier `.json` de l'état actuel
+  (à garder au chaud avant/après l'event).
+- **Restaurer une sauvegarde** : recharge un fichier `.json` (l'état courant est
+  sauvegardé avant remplacement).
 
 ## Développement (optionnel)
 

@@ -11,6 +11,7 @@ import {
   writeFileSync,
   renameSync,
   unlinkSync,
+  readdirSync,
 } from 'node:fs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -18,14 +19,20 @@ const ROOT = join(__dirname, '..');
 const DIST_DIR = join(ROOT, 'dist');
 const DATA_DIR = join(ROOT, 'data');
 const PHOTOS_DIR = join(DATA_DIR, 'photos');
+const BACKUPS_DIR = join(DATA_DIR, 'backups');
 const DB_FILE = join(DATA_DIR, 'db.json');
 
 const PORT = Number(process.env.PORT) || 4173;
 const ADMIN_CODE = process.env.ADMIN_CODE || 'zepadmin';
 const EVENT_ID = 'rasso';
 const WANT_TUNNEL = process.argv.includes('--tunnel') || process.env.TUNNEL === '1';
+const MAX_BACKUPS = 40;
+const BACKUP_DEBOUNCE_MS = 15 * 1000;
 
 mkdirSync(PHOTOS_DIR, { recursive: true });
+mkdirSync(BACKUPS_DIR, { recursive: true });
+
+const clamp = (value) => Math.min(10, Math.max(0, Math.round(Number(value) || 0)));
 
 function defaultDb() {
   return {
@@ -40,12 +47,139 @@ function defaultDb() {
   };
 }
 
+function normalizeVehicle(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const name = String(raw.name || '').trim();
+  const ownerName = String(raw.ownerName || '').trim();
+  if (!name || !ownerName) return null;
+  return {
+    id: String(raw.id || randomUUID()),
+    eventId: EVENT_ID,
+    name,
+    ownerName,
+    category: String(raw.category || '').trim(),
+    plate: raw.plate ? String(raw.plate).trim() : undefined,
+    imageUrl: typeof raw.imageUrl === 'string' && raw.imageUrl ? raw.imageUrl : undefined,
+    description: raw.description ? String(raw.description).trim() : undefined,
+    isContestant: raw.isContestant !== false,
+    isDisqualified: Boolean(raw.isDisqualified),
+    createdAt: String(raw.createdAt || new Date().toISOString()),
+  };
+}
+
+function normalizeVote(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const voterPseudo = String(raw.voterPseudo || '').trim();
+  const vehicleId = String(raw.vehicleId || '');
+  if (!voterPseudo || !vehicleId) return null;
+  const now = new Date().toISOString();
+  return {
+    id: String(raw.id || randomUUID()),
+    eventId: EVENT_ID,
+    vehicleId,
+    voterPseudo,
+    aesthetics: clamp(raw.aesthetics),
+    coherence: clamp(raw.coherence),
+    originality: clamp(raw.originality),
+    details: clamp(raw.details),
+    rpPresentation: clamp(raw.rpPresentation),
+    createdAt: String(raw.createdAt || now),
+    updatedAt: String(raw.updatedAt || now),
+  };
+}
+
+function normalizeDb(parsed) {
+  const base = defaultDb();
+  const event = parsed && typeof parsed.event === 'object' && parsed.event ? parsed.event : base.event;
+  const vehicles = Array.isArray(parsed?.vehicles)
+    ? parsed.vehicles.map(normalizeVehicle).filter(Boolean)
+    : [];
+  const vehicleIds = new Set(vehicles.map((vehicle) => vehicle.id));
+  const votes = Array.isArray(parsed?.votes)
+    ? parsed.votes.map(normalizeVote).filter((vote) => vote && vehicleIds.has(vote.vehicleId))
+    : [];
+  return {
+    event: {
+      id: EVENT_ID,
+      name: String(event.name || base.event.name).trim() || base.event.name,
+      status: ['open', 'closed', 'draft'].includes(event.status) ? event.status : 'open',
+      createdAt: String(event.createdAt || base.event.createdAt),
+    },
+    vehicles,
+    votes,
+  };
+}
+
 let db;
+let revision = 0;
+let lastBackupRevision = -1;
+let backupTimer = null;
+
+function serialize() {
+  return JSON.stringify(db, null, 2);
+}
+
+function scheduleBackup() {
+  if (backupTimer) return;
+  backupTimer = setTimeout(() => {
+    backupTimer = null;
+    if (revision !== lastBackupRevision) backupDb('auto');
+  }, BACKUP_DEBOUNCE_MS);
+  backupTimer.unref?.();
+}
 
 function saveDb() {
   const tmp = `${DB_FILE}.tmp`;
-  writeFileSync(tmp, JSON.stringify(db, null, 2));
+  writeFileSync(tmp, serialize());
   renameSync(tmp, DB_FILE);
+  revision += 1;
+  scheduleBackup();
+}
+
+function stamp() {
+  return new Date().toISOString().replace(/[:.]/g, '-');
+}
+
+function listBackups() {
+  try {
+    return readdirSync(BACKUPS_DIR)
+      .filter((file) => file.startsWith('db-') && file.endsWith('.json'))
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+function pruneBackups() {
+  const files = listBackups();
+  for (let i = 0; i < files.length - MAX_BACKUPS; i += 1) {
+    try {
+      unlinkSync(join(BACKUPS_DIR, files[i]));
+    } catch {
+      // fichier déjà retiré, on ignore
+    }
+  }
+}
+
+function backupDb(reason) {
+  try {
+    writeFileSync(join(BACKUPS_DIR, `db-${stamp()}.json`), serialize());
+    lastBackupRevision = revision;
+    pruneBackups();
+  } catch (err) {
+    console.warn(`  Sauvegarde auto impossible (${reason}) : ${err.message}`);
+  }
+}
+
+function recoverFromLatestBackup() {
+  const files = listBackups();
+  if (files.length === 0) return null;
+  try {
+    const newest = files[files.length - 1];
+    return normalizeDb(JSON.parse(readFileSync(join(BACKUPS_DIR, newest), 'utf8')));
+  } catch {
+    return null;
+  }
 }
 
 function loadDb() {
@@ -55,18 +189,32 @@ function loadDb() {
     return;
   }
   try {
-    const parsed = JSON.parse(readFileSync(DB_FILE, 'utf8'));
-    db = {
-      event: parsed.event || defaultDb().event,
-      vehicles: Array.isArray(parsed.vehicles) ? parsed.vehicles : [],
-      votes: Array.isArray(parsed.votes) ? parsed.votes : [],
-    };
-  } catch {
-    db = defaultDb();
+    db = normalizeDb(JSON.parse(readFileSync(DB_FILE, 'utf8')));
+  } catch (err) {
+    const corruptPath = join(DATA_DIR, `db.corrupt-${stamp()}.json`);
+    try {
+      renameSync(DB_FILE, corruptPath);
+    } catch {
+      // on n'a pas pu deplacer le fichier, on continue quand meme
+    }
+    const recovered = recoverFromLatestBackup();
+    if (recovered) {
+      db = recovered;
+      console.warn(`\n  /!\\ db.json illisible (${err.message}).`);
+      console.warn(`      Fichier corrompu mis de cote : ${corruptPath}`);
+      console.warn('      Donnees restaurees depuis la derniere sauvegarde automatique.\n');
+    } else {
+      db = defaultDb();
+      console.warn(`\n  /!\\ db.json illisible (${err.message}) et aucune sauvegarde disponible.`);
+      console.warn(`      Fichier corrompu mis de cote : ${corruptPath}`);
+      console.warn('      Redemarrage avec une base vide.\n');
+    }
+    saveDb();
   }
 }
 
 loadDb();
+backupDb('demarrage');
 
 const MIME_EXT = {
   'image/jpeg': 'jpg',
@@ -97,8 +245,6 @@ function removePhoto(imageUrl) {
     // photo déjà absente, on ignore
   }
 }
-
-const clamp = (value) => Math.min(10, Math.max(0, Math.round(Number(value) || 0)));
 
 const app = express();
 app.use(express.json({ limit: '12mb' }));
@@ -208,6 +354,7 @@ app.delete('/api/vehicles/:id', requireAdmin, (req, res) => {
     res.status(404).json({ error: 'Véhicule introuvable.' });
     return;
   }
+  backupDb('avant-suppression-vehicule');
   removePhoto(db.vehicles[index].imageUrl);
   db.vehicles.splice(index, 1);
   db.votes = db.votes.filter((vote) => vote.vehicleId !== req.params.id);
@@ -216,9 +363,30 @@ app.delete('/api/vehicles/:id', requireAdmin, (req, res) => {
 });
 
 app.delete('/api/votes', requireAdmin, (_req, res) => {
+  backupDb('avant-reset-votes');
   db.votes = [];
   saveDb();
   res.json({ ok: true });
+});
+
+app.get('/api/admin/backup', requireAdmin, (_req, res) => {
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="zeprasso-sauvegarde-${stamp()}.json"`);
+  res.send(serialize());
+});
+
+app.post('/api/admin/restore', requireAdmin, (req, res) => {
+  const body = req.body;
+  const looksValid =
+    body && typeof body === 'object' && (Array.isArray(body.vehicles) || Array.isArray(body.votes) || body.event);
+  if (!looksValid) {
+    res.status(400).json({ error: 'Fichier de sauvegarde invalide.' });
+    return;
+  }
+  backupDb('avant-restauration');
+  db = normalizeDb(body);
+  saveDb();
+  res.json({ ok: true, vehicles: db.vehicles.length, votes: db.votes.length });
 });
 
 app.use('/photos', express.static(PHOTOS_DIR));
@@ -230,6 +398,17 @@ app.use((req, res) => {
     return;
   }
   res.status(404).json({ error: 'Introuvable.' });
+});
+
+// eslint-disable-next-line no-unused-vars
+app.use((err, _req, res, _next) => {
+  const status = err.status || err.statusCode || 500;
+  if (status >= 400 && status < 500) {
+    if (!res.headersSent) res.status(status).json({ error: 'Requête invalide.' });
+    return;
+  }
+  console.error('  Erreur serveur :', err.message);
+  if (!res.headersSent) res.status(500).json({ error: 'Erreur interne du serveur.' });
 });
 
 function lanIp() {
@@ -293,7 +472,9 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`  Sur ce PC    : http://localhost:${PORT}`);
   console.log(`  Meme WiFi    : http://${ip}:${PORT}`);
   console.log(`  Code admin   : ${ADMIN_CODE}`);
-  console.log('\n  Donnees enregistrees dans data/db.json . Ctrl+C pour arreter.');
+  console.log('\n  Donnees    : data/db.json');
+  console.log(`  Sauvegardes: data/backups/ (auto apres chaque changement, ${MAX_BACKUPS} max)`);
+  console.log('  Ctrl+C pour arreter.');
   if (WANT_TUNNEL) startTunnel();
   else console.log('  Pour rendre l\'app accessible a distance : npm run share\n');
 });

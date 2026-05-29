@@ -74,3 +74,22 @@ export async function verifyAdminCode(code: string): Promise<boolean> {
     return false;
   }
 }
+
+export async function downloadBackup(): Promise<Blob> {
+  const response = await fetch('/api/admin/backup', { headers: adminHeaders() });
+  if (!response.ok) {
+    let message = `Erreur réseau (${response.status})`;
+    try {
+      const body = await response.json();
+      if (body?.error) message = body.error;
+    } catch {
+      // pas de corps JSON, on garde le message générique
+    }
+    throw new Error(message);
+  }
+  return response.blob();
+}
+
+export async function restoreBackup(data: unknown): Promise<{ vehicles: number; votes: number }> {
+  return api('/admin/restore', { method: 'POST', headers: adminHeaders(), body: JSON.stringify(data) });
+}
