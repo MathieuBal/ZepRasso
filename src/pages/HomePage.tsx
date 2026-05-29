@@ -16,11 +16,11 @@ export default function HomePage() {
         </div>
       </div>
       <aside className="panel grid">
-        <div className="badge ok"><QrCode size={16} /> Pensé pour QR code</div>
-        <h2>Flux simple</h2>
-        <p className="muted">1. Le visiteur scanne le QR code. 2. Il entre son pseudo. 3. Il vote véhicule par véhicule. 4. L’orga valide les résultats.</p>
+        <div className="badge ok"><QrCode size={16} /> Lien ou QR code</div>
+        <h2>Comment ça marche</h2>
+        <p className="muted">1. Ouvre le lien (ou scanne le QR code). 2. Entre ton pseudo RP. 3. Note les véhicules un par un. 4. L’organisateur valide le classement.</p>
         <div className="notice">
-          Les votes sont enregistrés en direct sur le PC de l'orga. Tout le monde vote depuis son téléphone sur le même WiFi.
+          Les votes sont enregistrés en direct et le classement se met à jour automatiquement.
         </div>
         <Link className="button" to="/results"><Trophy size={16} /> Voir les résultats</Link>
       </aside>

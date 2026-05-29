@@ -172,7 +172,7 @@ export default function AdminPage() {
           <button className="button ghost" onClick={handleLock}>Verrouiller</button>
         </div>
         <h1 className="page-title gradient-text">Gestion du rasso</h1>
-        <p className="lead">Données enregistrées localement sur le PC (fichier <code>data/db.json</code>).</p>
+        <p className="lead">Ajoute les véhicules, suis les votes en direct et exporte le classement final.</p>
         {message && <p className="success">{message}</p>}
         {error && <p className="error">{error}</p>}
       </div>

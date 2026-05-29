@@ -20,7 +20,7 @@ export default function ResultsPage() {
   return (
     <section className="grid">
       <PageHeader title="Résultats" badge="Classement live" badgeTone="closed">
-        <p className="lead">Classement calculé avec la moyenne des cinq critères. En V1, l’orga garde le dernier mot via l’admin.</p>
+        <p className="lead">Classement calculé sur la moyenne des cinq critères. L’organisateur valide le résultat final depuis l’espace admin.</p>
       </PageHeader>
       {loading && <p className="notice">Calcul des résultats...</p>}
       {error && <p className="error">{error}</p>}
