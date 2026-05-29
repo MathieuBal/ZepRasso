@@ -25,17 +25,37 @@ export type Vote = {
   id: string;
   eventId: string;
   vehicleId: string;
+  voterId?: string;
   voterPseudo: string;
   aesthetics: number;
   coherence: number;
   originality: number;
   details: number;
   rpPresentation: number;
+  ip?: string;
   createdAt: string;
   updatedAt: string;
 };
 
-export type VoteInput = Omit<Vote, 'id' | 'createdAt' | 'updatedAt'>;
+export type VoteInput = {
+  eventId: string;
+  vehicleId: string;
+  voterId: string;
+  voterPseudo: string;
+  aesthetics: number;
+  coherence: number;
+  originality: number;
+  details: number;
+  rpPresentation: number;
+};
+
+export type AuditReport = {
+  totalVotes: number;
+  distinctVoters: number;
+  distinctIps: number;
+  sharedIps: { ip: string; voters: number; pseudos: string[] }[];
+  reusedPseudos: { pseudo: string; devices: number }[];
+};
 
 export type VehicleScore = {
   vehicle: Vehicle;

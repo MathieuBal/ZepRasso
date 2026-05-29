@@ -1,5 +1,5 @@
-import { getAdminCode } from './localSession';
-import type { RassoEvent, Vehicle, Vote, VoteInput } from '../types';
+import { getAdminCode, getVoterId } from './localSession';
+import type { AuditReport, RassoEvent, Vehicle, Vote, VoteInput } from '../types';
 
 export const EVENT_ID = 'rasso';
 
@@ -46,8 +46,8 @@ export function getVotes(): Promise<Vote[]> {
   return api<Vote[]>('/votes');
 }
 
-export async function upsertVote(input: VoteInput): Promise<void> {
-  await api('/votes', { method: 'POST', body: JSON.stringify(input) });
+export async function upsertVote(input: Omit<VoteInput, 'voterId'>): Promise<void> {
+  await api('/votes', { method: 'POST', body: JSON.stringify({ ...input, voterId: getVoterId() }) });
 }
 
 export async function addVehicle(vehicle: Omit<Vehicle, 'id' | 'eventId' | 'createdAt'>): Promise<void> {
@@ -96,4 +96,8 @@ export async function downloadBackup(): Promise<Blob> {
 
 export async function restoreBackup(data: unknown): Promise<{ vehicles: number; votes: number }> {
   return api('/admin/restore', { method: 'POST', headers: adminHeaders(), body: JSON.stringify(data) });
+}
+
+export function getAudit(): Promise<AuditReport> {
+  return api<AuditReport>('/admin/audit', { headers: adminHeaders() });
 }

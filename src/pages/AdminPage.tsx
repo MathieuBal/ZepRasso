@@ -9,6 +9,7 @@ import {
   addVehicle,
   deleteVehicle,
   downloadBackup,
+  getAudit,
   getEvent,
   getVehicles,
   getVotes,
@@ -19,7 +20,7 @@ import {
   verifyAdminCode,
 } from '../lib/repository';
 import { calculateVehicleScores } from '../lib/scoring';
-import type { RassoEvent, Vehicle, Vote } from '../types';
+import type { AuditReport, RassoEvent, Vehicle, Vote } from '../types';
 
 const initialForm = {
   name: '',
@@ -39,6 +40,7 @@ export default function AdminPage() {
   const [eventName, setEventName] = useState('');
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [votes, setVotes] = useState<Vote[]>([]);
+  const [audit, setAudit] = useState<AuditReport | null>(null);
   const [form, setForm] = useState(initialForm);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -46,11 +48,17 @@ export default function AdminPage() {
   const scores = useMemo(() => calculateVehicleScores(vehicles, votes), [vehicles, votes]);
 
   async function refresh() {
-    const [loadedEvent, loadedVehicles, loadedVotes] = await Promise.all([getEvent(), getVehicles(), getVotes()]);
+    const [loadedEvent, loadedVehicles, loadedVotes, loadedAudit] = await Promise.all([
+      getEvent(),
+      getVehicles(),
+      getVotes(),
+      getAudit(),
+    ]);
     setRassoEvent(loadedEvent);
     setEventName(loadedEvent.name);
     setVehicles(loadedVehicles);
     setVotes(loadedVotes);
+    setAudit(loadedAudit);
   }
 
   useEffect(() => {
@@ -330,6 +338,56 @@ export default function AdminPage() {
         <p className="section-eyebrow">Résultats</p>
         <h2>Classement</h2>
         <ResultsTable scores={scores} />
+      </div>
+
+      <div className="panel grid">
+        <p className="section-eyebrow">Contrôle</p>
+        <h2>Anti-triche</h2>
+        <p className="muted">Chaque appareil ne peut voter qu'une fois par véhicule, même en changeant de pseudo. Voici les signaux à surveiller.</p>
+        <div className="actions">
+          <span className="badge ok">{audit?.totalVotes ?? 0} votes</span>
+          <span className="badge wait">{audit?.distinctVoters ?? 0} appareils</span>
+          <span className="badge wait">{audit?.distinctIps ?? 0} adresses IP</span>
+        </div>
+
+        <h3>Plusieurs appareils derrière une même IP</h3>
+        {audit && audit.sharedIps.length > 0 ? (
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>Adresse IP</th><th>Appareils</th><th>Pseudos</th></tr></thead>
+              <tbody>
+                {audit.sharedIps.map((row) => (
+                  <tr key={row.ip}>
+                    <td>{row.ip}</td>
+                    <td>{row.voters}</td>
+                    <td>{row.pseudos.join(', ')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="muted">Rien à signaler. (Note : un même foyer ou réseau partage parfois une IP, ce n'est pas forcément de la triche.)</p>
+        )}
+
+        <h3>Pseudo utilisé sur plusieurs appareils</h3>
+        {audit && audit.reusedPseudos.length > 0 ? (
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>Pseudo</th><th>Appareils</th></tr></thead>
+              <tbody>
+                {audit.reusedPseudos.map((row) => (
+                  <tr key={row.pseudo}>
+                    <td>{row.pseudo}</td>
+                    <td>{row.devices}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="muted">Rien à signaler.</p>
+        )}
       </div>
     </section>
   );

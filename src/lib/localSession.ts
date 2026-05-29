@@ -1,8 +1,18 @@
-import { safeStorage } from './storage';
+import { safeStorage, safeUuid } from './storage';
 
 const PSEUDO_KEY = 'zeprasso_voter_pseudo';
 const ADMIN_KEY = 'zeprasso_admin_unlocked';
 const ADMIN_CODE_KEY = 'zeprasso_admin_code';
+const VOTER_ID_KEY = 'zeprasso_voter_id';
+
+export function getVoterId(): string {
+  let id = safeStorage.getItem(VOTER_ID_KEY);
+  if (!id) {
+    id = safeUuid();
+    safeStorage.setItem(VOTER_ID_KEY, id);
+  }
+  return id;
+}
 
 export function getStoredPseudo(): string | null {
   return safeStorage.getItem(PSEUDO_KEY);

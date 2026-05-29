@@ -99,6 +99,25 @@ Ce dossier n'est pas versionné (`.gitignore`). Pour **sauvegarder** ou
 dossier `data/`. Pour repartir de zéro, supprime-le : il sera recréé vide au
 prochain lancement.
 
+## Limiter la triche
+
+Chaque navigateur reçoit un identifiant d'appareil anonyme (stocké en local).
+Le serveur déduplique les votes **par appareil** et par véhicule : changer de
+pseudo (ou se créer un nouveau nom) ne permet donc pas de voter deux fois pour
+le même véhicule — le vote existant est simplement mis à jour.
+
+La page **Admin** affiche un panneau « Anti-triche » avec :
+
+- le nombre de votes, d'appareils distincts et d'adresses IP ;
+- les IP derrière lesquelles plusieurs appareils ont voté ;
+- les pseudos réutilisés sur plusieurs appareils.
+
+Ce sont des signaux de **détection**, pas des blocages : un même foyer ou
+réseau partage parfois une IP. L'organisateur reste juge et peut disqualifier
+un véhicule ou réinitialiser les votes. Vider le cache du navigateur ou changer
+d'appareil reste possible : sans comptes, on relève la barre sans la rendre
+infranchissable.
+
 ## Sauvegardes et sécurité des données
 
 L'écriture de `db.json` est **atomique** (écriture dans un fichier temporaire

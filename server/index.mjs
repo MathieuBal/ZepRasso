@@ -77,15 +77,30 @@ function normalizeVote(raw) {
     id: String(raw.id || randomUUID()),
     eventId: EVENT_ID,
     vehicleId,
+    voterId: raw.voterId ? String(raw.voterId) : undefined,
     voterPseudo,
     aesthetics: clamp(raw.aesthetics),
     coherence: clamp(raw.coherence),
     originality: clamp(raw.originality),
     details: clamp(raw.details),
     rpPresentation: clamp(raw.rpPresentation),
+    ip: raw.ip ? String(raw.ip) : undefined,
     createdAt: String(raw.createdAt || now),
     updatedAt: String(raw.updatedAt || now),
   };
+}
+
+function clientIp(req) {
+  const cf = req.get('cf-connecting-ip');
+  if (cf) return cf.trim();
+  const xff = req.get('x-forwarded-for');
+  if (xff) return xff.split(',')[0].trim();
+  return (req.socket && req.socket.remoteAddress) || '';
+}
+
+function publicVote(vote) {
+  const { voterId, ip, ...rest } = vote;
+  return rest;
 }
 
 function normalizeDb(parsed) {
@@ -259,7 +274,7 @@ function requireAdmin(req, res, next) {
 
 app.get('/api/event', (_req, res) => res.json(db.event));
 app.get('/api/vehicles', (_req, res) => res.json(db.vehicles));
-app.get('/api/votes', (_req, res) => res.json(db.votes));
+app.get('/api/votes', (_req, res) => res.json(db.votes.map(publicVote)));
 
 app.post('/api/admin/login', (req, res) => {
   if ((req.body?.code || '') !== ADMIN_CODE) {
@@ -277,6 +292,7 @@ app.post('/api/votes', (req, res) => {
   const body = req.body || {};
   const voterPseudo = String(body.voterPseudo || '').trim();
   const vehicleId = String(body.vehicleId || '');
+  const voterId = String(body.voterId || '').trim();
   if (!voterPseudo || !vehicleId) {
     res.status(400).json({ error: 'Pseudo et véhicule requis.' });
     return;
@@ -293,18 +309,24 @@ app.post('/api/votes', (req, res) => {
     rpPresentation: clamp(body.rpPresentation),
   };
   const now = new Date().toISOString();
-  const existing = db.votes.find(
-    (vote) => vote.vehicleId === vehicleId && vote.voterPseudo.toLowerCase() === voterPseudo.toLowerCase(),
+  const ip = clientIp(req);
+  // Une voix par appareil (voterId) et par véhicule : changer de pseudo ne permet pas de revoter.
+  const existing = db.votes.find((vote) =>
+    vote.vehicleId === vehicleId &&
+    (voterId ? vote.voterId === voterId : vote.voterPseudo.toLowerCase() === voterPseudo.toLowerCase()),
   );
   if (existing) {
-    Object.assign(existing, scores, { updatedAt: now });
+    Object.assign(existing, scores, { updatedAt: now, voterPseudo, ip });
+    if (voterId) existing.voterId = voterId;
   } else {
     db.votes.push({
       id: randomUUID(),
       eventId: EVENT_ID,
       vehicleId,
+      voterId: voterId || undefined,
       voterPseudo,
       ...scores,
+      ip,
       createdAt: now,
       updatedAt: now,
     });
@@ -383,6 +405,45 @@ app.delete('/api/votes', requireAdmin, (_req, res) => {
   db.votes = [];
   saveDb();
   res.json({ ok: true });
+});
+
+app.get('/api/admin/audit', requireAdmin, (_req, res) => {
+  const votersByIp = new Map();
+  const pseudosByIp = new Map();
+  const votersByPseudo = new Map();
+  const voters = new Set();
+  const ips = new Set();
+  for (const vote of db.votes) {
+    const voterId = vote.voterId || `vote-${vote.id}`;
+    voters.add(voterId);
+    if (vote.ip) {
+      ips.add(vote.ip);
+      if (!votersByIp.has(vote.ip)) {
+        votersByIp.set(vote.ip, new Set());
+        pseudosByIp.set(vote.ip, new Set());
+      }
+      votersByIp.get(vote.ip).add(voterId);
+      pseudosByIp.get(vote.ip).add(vote.voterPseudo);
+    }
+    const key = vote.voterPseudo.toLowerCase();
+    if (!votersByPseudo.has(key)) votersByPseudo.set(key, { pseudo: vote.voterPseudo, voters: new Set() });
+    votersByPseudo.get(key).voters.add(voterId);
+  }
+  const sharedIps = [...votersByIp.entries()]
+    .filter(([, set]) => set.size > 1)
+    .map(([ip, set]) => ({ ip, voters: set.size, pseudos: [...pseudosByIp.get(ip)] }))
+    .sort((a, b) => b.voters - a.voters);
+  const reusedPseudos = [...votersByPseudo.values()]
+    .filter((entry) => entry.voters.size > 1)
+    .map((entry) => ({ pseudo: entry.pseudo, devices: entry.voters.size }))
+    .sort((a, b) => b.devices - a.devices);
+  res.json({
+    totalVotes: db.votes.length,
+    distinctVoters: voters.size,
+    distinctIps: ips.size,
+    sharedIps,
+    reusedPseudos,
+  });
 });
 
 app.get('/api/admin/backup', requireAdmin, (_req, res) => {
