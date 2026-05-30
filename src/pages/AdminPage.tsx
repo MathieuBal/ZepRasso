@@ -280,14 +280,16 @@ export default function AdminPage() {
           <p className="section-eyebrow">Inscription</p>
           <h2>Ajouter un véhicule</h2>
           <form className="form" onSubmit={handleAddVehicle}>
-            <label className="field"><span className="label">Nom du véhicule *</span><input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
-            <label className="field"><span className="label">Propriétaire *</span><input className="input" value={form.ownerName} onChange={(e) => setForm({ ...form, ownerName: e.target.value })} /></label>
+            <label className="field"><span className="label">Nom du véhicule *</span><input className="input" required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
+            <label className="field"><span className="label">Propriétaire *</span><input className="input" required value={form.ownerName} onChange={(e) => setForm({ ...form, ownerName: e.target.value })} /></label>
             <label className="field"><span className="label">Catégorie</span><input className="input" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} placeholder="JDM, Sportive, Luxe..." /></label>
             <label className="field"><span className="label">Plaque</span><input className="input" value={form.plate} onChange={(e) => setForm({ ...form, plate: e.target.value })} /></label>
             <ImagePicker value={form.imageUrl || undefined} onChange={(value) => setForm({ ...form, imageUrl: value || '' })} />
             <label className="field"><span className="label">…ou coller une URL d'image</span><input className="input" value={form.imageUrl.startsWith('data:') ? '' : form.imageUrl} onChange={(e) => setForm({ ...form, imageUrl: e.target.value })} placeholder="https://..." /></label>
             <label className="field"><span className="label">Description</span><textarea className="textarea" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></label>
-            <button className="button primary" type="submit">Ajouter</button>
+            {error && <p className="error">{error}</p>}
+            {message && <p className="success">{message}</p>}
+            <button className="button primary" type="submit">Ajouter le véhicule</button>
           </form>
         </div>
 
