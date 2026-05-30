@@ -2,12 +2,24 @@ import express from 'express';
 import os from 'node:os';
 import { spawn } from 'node:child_process';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
+import {
+  EVENT_ID,
+  clamp,
+  computeAudit,
+  defaultDb,
+  findExistingVote,
+  normalizeDb,
+  normalizeVote,
+  publicVote,
+} from './lib.mjs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
+  appendFileSync,
   existsSync,
   mkdirSync,
   readFileSync,
+  statSync,
   writeFileSync,
   renameSync,
   unlinkSync,
@@ -21,10 +33,11 @@ const DATA_DIR = join(ROOT, 'data');
 const PHOTOS_DIR = join(DATA_DIR, 'photos');
 const BACKUPS_DIR = join(DATA_DIR, 'backups');
 const DB_FILE = join(DATA_DIR, 'db.json');
+const LOG_FILE = join(DATA_DIR, 'server.log');
+const LOG_MAX_BYTES = 2 * 1024 * 1024; // 2 Mo : on tronque par moitié au-delà
 
 const PORT = Number(process.env.PORT) || 4173;
 const ADMIN_CODE = process.env.ADMIN_CODE || 'zepadmin';
-const EVENT_ID = 'rasso';
 const WANT_TUNNEL = process.argv.includes('--tunnel') || process.env.TUNNEL === '1';
 // Quand on est derrière le tunnel cloudflared on doit croire les en-têtes
 // X-Forwarded-For / CF-Connecting-IP pour identifier la vraie IP. En accès
@@ -41,62 +54,22 @@ const ADMIN_RATE_MAX_FAILURES = 10;
 mkdirSync(PHOTOS_DIR, { recursive: true });
 mkdirSync(BACKUPS_DIR, { recursive: true });
 
-const clamp = (value) => Math.min(10, Math.max(0, Math.round(Number(value) || 0)));
-
-function defaultDb() {
-  return {
-    event: {
-      id: EVENT_ID,
-      name: 'ZepRasso - Car Meet RP',
-      status: 'open',
-      createdAt: new Date().toISOString(),
-    },
-    vehicles: [],
-    votes: [],
-  };
-}
-
-function normalizeVehicle(raw) {
-  if (!raw || typeof raw !== 'object') return null;
-  const name = String(raw.name || '').trim();
-  const ownerName = String(raw.ownerName || '').trim();
-  if (!name || !ownerName) return null;
-  return {
-    id: String(raw.id || randomUUID()),
-    eventId: EVENT_ID,
-    name,
-    ownerName,
-    category: String(raw.category || '').trim(),
-    plate: raw.plate ? String(raw.plate).trim() : undefined,
-    imageUrl: typeof raw.imageUrl === 'string' && raw.imageUrl ? raw.imageUrl : undefined,
-    description: raw.description ? String(raw.description).trim() : undefined,
-    isContestant: raw.isContestant !== false,
-    isDisqualified: Boolean(raw.isDisqualified),
-    createdAt: String(raw.createdAt || new Date().toISOString()),
-  };
-}
-
-function normalizeVote(raw) {
-  if (!raw || typeof raw !== 'object') return null;
-  const voterPseudo = String(raw.voterPseudo || '').trim();
-  const vehicleId = String(raw.vehicleId || '');
-  if (!voterPseudo || !vehicleId) return null;
-  const now = new Date().toISOString();
-  return {
-    id: String(raw.id || randomUUID()),
-    eventId: EVENT_ID,
-    vehicleId,
-    voterId: raw.voterId ? String(raw.voterId) : undefined,
-    voterPseudo,
-    aesthetics: clamp(raw.aesthetics),
-    coherence: clamp(raw.coherence),
-    originality: clamp(raw.originality),
-    details: clamp(raw.details),
-    rpPresentation: clamp(raw.rpPresentation),
-    ip: raw.ip ? String(raw.ip) : undefined,
-    createdAt: String(raw.createdAt || now),
-    updatedAt: String(raw.updatedAt || now),
-  };
+// Append simple à data/server.log avec rotation par moitié quand on dépasse
+// LOG_MAX_BYTES, pour qu'un event qui dure ne fasse pas exploser le fichier.
+function logToFile(level, message) {
+  try {
+    const line = `${new Date().toISOString()} [${level}] ${message}\n`;
+    if (existsSync(LOG_FILE)) {
+      const size = statSync(LOG_FILE).size;
+      if (size + line.length > LOG_MAX_BYTES) {
+        const kept = readFileSync(LOG_FILE).slice(Math.floor(LOG_MAX_BYTES / 2));
+        writeFileSync(LOG_FILE, kept);
+      }
+    }
+    appendFileSync(LOG_FILE, line);
+  } catch {
+    // Si on n'arrive même pas à écrire le log, on ne fait rien : pas de boucle.
+  }
 }
 
 function clientIp(req) {
@@ -139,33 +112,6 @@ function noteAdminFailure(ip) {
 }
 function clearAdminFailures(ip) {
   if (ip) adminFailures.delete(ip);
-}
-
-function publicVote(vote) {
-  const { voterId, ip, ...rest } = vote;
-  return rest;
-}
-
-function normalizeDb(parsed) {
-  const base = defaultDb();
-  const event = parsed && typeof parsed.event === 'object' && parsed.event ? parsed.event : base.event;
-  const vehicles = Array.isArray(parsed?.vehicles)
-    ? parsed.vehicles.map(normalizeVehicle).filter(Boolean)
-    : [];
-  const vehicleIds = new Set(vehicles.map((vehicle) => vehicle.id));
-  const votes = Array.isArray(parsed?.votes)
-    ? parsed.votes.map(normalizeVote).filter((vote) => vote && vehicleIds.has(vote.vehicleId))
-    : [];
-  return {
-    event: {
-      id: EVENT_ID,
-      name: String(event.name || base.event.name).trim() || base.event.name,
-      status: ['open', 'closed', 'draft'].includes(event.status) ? event.status : 'open',
-      createdAt: String(event.createdAt || base.event.createdAt),
-    },
-    vehicles,
-    votes,
-  };
 }
 
 let db;
@@ -394,10 +340,7 @@ app.post('/api/votes', (req, res) => {
   const now = new Date().toISOString();
   const ip = clientIp(req);
   // Une voix par appareil (voterId) et par véhicule : changer de pseudo ne permet pas de revoter.
-  const existing = db.votes.find((vote) =>
-    vote.vehicleId === vehicleId &&
-    (voterId ? vote.voterId === voterId : vote.voterPseudo.toLowerCase() === voterPseudo.toLowerCase()),
-  );
+  const existing = findExistingVote(db.votes, vehicleId, voterId, voterPseudo);
   if (existing) {
     Object.assign(existing, scores, { updatedAt: now, voterPseudo, ip });
     if (voterId) existing.voterId = voterId;
@@ -501,42 +444,7 @@ app.delete('/api/votes', requireAdmin, (_req, res) => {
 });
 
 app.get('/api/admin/audit', requireAdmin, (_req, res) => {
-  const votersByIp = new Map();
-  const pseudosByIp = new Map();
-  const votersByPseudo = new Map();
-  const voters = new Set();
-  const ips = new Set();
-  for (const vote of db.votes) {
-    const voterId = vote.voterId || `vote-${vote.id}`;
-    voters.add(voterId);
-    if (vote.ip) {
-      ips.add(vote.ip);
-      if (!votersByIp.has(vote.ip)) {
-        votersByIp.set(vote.ip, new Set());
-        pseudosByIp.set(vote.ip, new Set());
-      }
-      votersByIp.get(vote.ip).add(voterId);
-      pseudosByIp.get(vote.ip).add(vote.voterPseudo);
-    }
-    const key = vote.voterPseudo.toLowerCase();
-    if (!votersByPseudo.has(key)) votersByPseudo.set(key, { pseudo: vote.voterPseudo, voters: new Set() });
-    votersByPseudo.get(key).voters.add(voterId);
-  }
-  const sharedIps = [...votersByIp.entries()]
-    .filter(([, set]) => set.size > 1)
-    .map(([ip, set]) => ({ ip, voters: set.size, pseudos: [...pseudosByIp.get(ip)] }))
-    .sort((a, b) => b.voters - a.voters);
-  const reusedPseudos = [...votersByPseudo.values()]
-    .filter((entry) => entry.voters.size > 1)
-    .map((entry) => ({ pseudo: entry.pseudo, devices: entry.voters.size }))
-    .sort((a, b) => b.devices - a.devices);
-  res.json({
-    totalVotes: db.votes.length,
-    distinctVoters: voters.size,
-    distinctIps: ips.size,
-    sharedIps,
-    reusedPseudos,
-  });
+  res.json(computeAudit(db.votes));
 });
 
 app.get('/api/admin/backup', requireAdmin, (_req, res) => {
@@ -578,6 +486,7 @@ app.use((err, _req, res, _next) => {
     return;
   }
   console.error('  Erreur serveur :', err.message);
+  logToFile('ERROR', `${req.method} ${req.originalUrl || req.url} — ${err.stack || err.message}`);
   if (!res.headersSent) res.status(500).json({ error: 'Erreur interne du serveur.' });
 });
 
@@ -644,8 +553,10 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`  Code admin   : ${ADMIN_CODE}`);
   console.log('\n  Donnees    : data/db.json');
   console.log(`  Sauvegardes: data/backups/ (auto apres chaque changement, ${MAX_BACKUPS} max)`);
+  console.log(`  Journal    : data/server.log (erreurs + demarrages)`);
   console.log(`  IP source  : ${TRUST_PROXY ? 'en-tetes proxy (CF-Connecting-IP / X-Forwarded-For)' : 'socket TCP direct'}`);
   console.log('  Ctrl+C pour arreter.');
+  logToFile('INFO', `start port=${PORT} tunnel=${WANT_TUNNEL ? 'on' : 'off'} trustProxy=${TRUST_PROXY ? 'on' : 'off'}`);
   if (WANT_TUNNEL) startTunnel();
   else console.log('  Pour rendre l\'app accessible a distance : npm run share\n');
 });

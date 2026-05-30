@@ -10,21 +10,23 @@
     "server": "node --env-file-if-exists=.env server/index.mjs",
     "serve": "node --env-file-if-exists=.env server/index.mjs",
     "start": "npm run build && node --env-file-if-exists=.env server/index.mjs",
-    "share": "npm run build && node --env-file-if-exists=.env server/index.mjs --tunnel"
+    "share": "npm run build && node --env-file-if-exists=.env server/index.mjs --tunnel",
+    "test": "vitest run"
   },
   "dependencies": {
-    "@vitejs/plugin-react": "latest",
+    "@vitejs/plugin-react": "^6.0.2",
     "express": "^4.21.2",
-    "lucide-react": "latest",
+    "lucide-react": "^1.16.0",
     "qrcode.react": "^4.2.0",
-    "react": "latest",
-    "react-dom": "latest",
-    "react-router-dom": "latest",
-    "typescript": "latest",
-    "vite": "latest"
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "react-router-dom": "^7.15.1",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.14"
   },
   "devDependencies": {
-    "@types/react": "latest",
-    "@types/react-dom": "latest"
+    "@types/react": "^19.2.15",
+    "@types/react-dom": "^19.2.3",
+    "vitest": "^4.1.7"
   }
 }
