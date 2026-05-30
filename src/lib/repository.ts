@@ -8,9 +8,10 @@ export function getConfiguredEventId(): string {
 }
 
 async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const { headers: extraHeaders, ...rest } = options;
   const response = await fetch(`/api${path}`, {
-    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
-    ...options,
+    ...rest,
+    headers: { 'Content-Type': 'application/json', ...(extraHeaders || {}) },
   });
   if (!response.ok) {
     let message = `Erreur réseau (${response.status})`;
