@@ -35,6 +35,17 @@ export function getEvent(): Promise<RassoEvent> {
   return api<RassoEvent>('/event');
 }
 
+export type NetworkInfo = {
+  lanIp: string;
+  port: number;
+  lanUrl: string | null;
+  behindTunnel: boolean;
+};
+
+export function getNetwork(): Promise<NetworkInfo> {
+  return api<NetworkInfo>('/network');
+}
+
 export function updateEvent(patch: { name?: string; status?: RassoEvent['status'] }): Promise<RassoEvent> {
   return api<RassoEvent>('/event', { method: 'PATCH', headers: adminHeaders(), body: JSON.stringify(patch) });
 }

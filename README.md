@@ -35,6 +35,19 @@ npm start
 - **Sur le même WiFi** (téléphones d'à côté) : ouvre l'adresse réseau
   `http://192.168.x.x:4173`.
 
+> **Le QR code ne s'ouvre pas sur le téléphone ?** Vérifie deux choses :
+>
+> 1. Le téléphone est bien sur le même WiFi que le PC.
+> 2. À la première ouverture, Windows demande d'autoriser Node sur le
+>    réseau privé : **autorise** (sinon les téléphones sont bloqués par
+>    le pare-feu). Si tu as cliqué « Refuser », va dans
+>    *Sécurité Windows → Pare-feu → Applications autorisées* et
+>    autorise `node.exe` sur le profil « Privé ».
+>
+> La page **Admin → QR code** détecte si tu es sur `localhost` et bascule
+> automatiquement le QR sur l'adresse réseau du PC. Si elle ne trouve
+> pas d'adresse utilisable, elle te le dit clairement.
+
 `npm start` = usage local uniquement. Pour que des gens **à distance** se
 connectent (event en ligne, chacun chez soi), voir la section suivante.
 

@@ -294,6 +294,19 @@ function requireAdmin(req, res, next) {
 }
 
 app.get('/api/event', (_req, res) => res.json(db.event));
+
+// Aide la page QR à fabriquer un lien que les téléphones du même WiFi peuvent
+// vraiment ouvrir (impossible si on encode "localhost"). On expose l'IP LAN
+// vue par le serveur ; la page QR l'utilise quand l'admin est sur localhost.
+app.get('/api/network', (_req, res) => {
+  const ip = lanIp();
+  res.json({
+    lanIp: ip,
+    port: PORT,
+    lanUrl: ip && ip !== 'localhost' ? `http://${ip}:${PORT}` : null,
+    behindTunnel: WANT_TUNNEL,
+  });
+});
 app.get('/api/vehicles', (_req, res) => res.json(db.vehicles));
 app.get('/api/votes', (_req, res) => res.json(db.votes.map(publicVote)));
 
