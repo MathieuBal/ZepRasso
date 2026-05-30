@@ -39,6 +39,7 @@ export type NetworkInfo = {
   lanIp: string;
   port: number;
   lanUrl: string | null;
+  publicUrl: string | null;
   behindTunnel: boolean;
 };
 

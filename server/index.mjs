@@ -38,6 +38,9 @@ const LOG_MAX_BYTES = 2 * 1024 * 1024; // 2 Mo : on tronque par moitié au-delà
 
 const PORT = Number(process.env.PORT) || 4173;
 const ADMIN_CODE = process.env.ADMIN_CODE || 'zepadmin';
+// URL publique stable (Tailscale Funnel, tunnel nommé Cloudflare, ngrok perso, etc.).
+// Si elle est fournie, la page QR l'utilise au lieu de localhost / IP LAN.
+const PUBLIC_URL = (process.env.PUBLIC_URL || '').trim().replace(/\/+$/, '') || null;
 const WANT_TUNNEL = process.argv.includes('--tunnel') || process.env.TUNNEL === '1';
 // Quand on est derrière le tunnel cloudflared on doit croire les en-têtes
 // X-Forwarded-For / CF-Connecting-IP pour identifier la vraie IP. En accès
@@ -304,6 +307,7 @@ app.get('/api/network', (_req, res) => {
     lanIp: ip,
     port: PORT,
     lanUrl: ip && ip !== 'localhost' ? `http://${ip}:${PORT}` : null,
+    publicUrl: PUBLIC_URL,
     behindTunnel: WANT_TUNNEL,
   });
 });

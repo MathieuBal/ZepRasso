@@ -22,16 +22,25 @@ export default function QrPage() {
   const darkRef = useRef<HTMLCanvasElement>(null);
   const lightRef = useRef<HTMLCanvasElement>(null);
   const [shareUrl, setShareUrl] = useState<string>(currentOriginUrl());
-  const [mode, setMode] = useState<'origin' | 'lan' | 'no-lan'>(
+  const [mode, setMode] = useState<'public' | 'origin' | 'lan' | 'no-lan'>(
     isLocalhost() ? 'no-lan' : 'origin',
   );
 
   useEffect(() => {
     let cancelled = false;
-    if (!isLocalhost()) return;
+    // On interroge toujours /api/network : si une PUBLIC_URL est configurée
+    // (Tailscale Funnel, tunnel nommé Cloudflare, etc.), on la préfère sur
+    // tout. Sinon on conserve l'origine, ou on bascule sur l'URL LAN quand
+    // l'admin est ouvert via localhost.
     getNetwork()
       .then((info) => {
         if (cancelled) return;
+        if (info.publicUrl) {
+          setShareUrl(info.publicUrl + '/');
+          setMode('public');
+          return;
+        }
+        if (!isLocalhost()) return;
         if (info.lanUrl) {
           setShareUrl(info.lanUrl + '/');
           setMode('lan');
@@ -39,7 +48,7 @@ export default function QrPage() {
           setMode('no-lan');
         }
       })
-      .catch(() => { if (!cancelled) setMode('no-lan'); });
+      .catch(() => { if (isLocalhost() && !cancelled) setMode('no-lan'); });
     return () => { cancelled = true; };
   }, []);
 
@@ -61,6 +70,11 @@ export default function QrPage() {
         <h1 className="page-title gradient-text">Inviter les participants</h1>
         <p className="lead">Partage le lien ci-dessous (Discord, salon vocal…) ou diffuse ce QR code. Les participants l’ouvrent, entrent leur pseudo RP, puis votent.</p>
 
+        {mode === 'public' && (
+          <p className="notice">
+            <strong>URL publique fixe</strong> — accessible depuis n'importe où, même sans le même WiFi. Tant que ton PC tourne et que le tunnel est actif, ce lien marche.
+          </p>
+        )}
         {mode === 'lan' && (
           <p className="notice">
             <strong>Adresse WiFi local :</strong> les téléphones doivent être sur le même WiFi que ce PC. Si le QR ne s'ouvre pas, vérifie que ton pare-feu Windows autorise Node sur le réseau privé. Pour un event en ligne (joueurs à distance), utilise plutôt <code>npm run share</code> et partage l'URL du tunnel.
