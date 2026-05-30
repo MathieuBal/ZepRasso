@@ -57,7 +57,13 @@ Si les participants ne sont pas sur ton réseau, on ouvre un **tunnel** : une UR
 publique `https://...` qui pointe vers ton PC. L'app et les données restent chez
 toi, tu partages juste le lien (dans le Discord par exemple).
 
-1. **Installer l'outil cloudflared, une seule fois** (gratuit, sans compte) :
+1. **Installer l'outil cloudflared, une seule fois** (gratuit, sans compte).
+   Le plus simple, **sans terminal** : depuis ton IDE, lance le script npm
+   **`tunnel:install`** (panneau « npm Scripts » de VS Code, ou clic sur
+   « Run » au-dessus du script dans `package.json`). Il télécharge cloudflared
+   dans le dossier `bin/` du projet, c'est tout.
+
+   Au choix, installation système classique :
    - macOS : `brew install cloudflared`
    - Windows : `winget install --id Cloudflare.cloudflared`
    - Linux / autre : voir la

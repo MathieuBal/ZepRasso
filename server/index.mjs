@@ -512,13 +512,23 @@ function lanIp() {
   return 'localhost';
 }
 
+function resolveCloudflared() {
+  // 1) chemin explicite, 2) binaire telecharge dans ./bin (script npm
+  // "tunnel:install"), 3) cloudflared installe globalement (PATH).
+  if (process.env.CLOUDFLARED_PATH) return process.env.CLOUDFLARED_PATH;
+  const localName = process.platform === 'win32' ? 'cloudflared.exe' : 'cloudflared';
+  const localBin = join(ROOT, 'bin', localName);
+  if (existsSync(localBin)) return localBin;
+  return 'cloudflared';
+}
+
 function startTunnel() {
   if (ADMIN_CODE === 'zepadmin') {
     console.warn('\n  /!\\ Le code admin est encore "zepadmin" alors que l\'app va etre publique.');
-    console.warn('      Relance avec : ADMIN_CODE="ton-code" npm run share\n');
+    console.warn('      Mets ton code dans le fichier .env avant de partager.\n');
   }
   console.log('  Ouverture du tunnel public (cloudflared)...');
-  const child = spawn('cloudflared', ['tunnel', '--url', `http://localhost:${PORT}`, '--no-autoupdate'], {
+  const child = spawn(resolveCloudflared(), ['tunnel', '--url', `http://localhost:${PORT}`, '--no-autoupdate'], {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let announced = false;

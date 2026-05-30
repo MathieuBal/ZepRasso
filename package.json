@@ -11,6 +11,7 @@
     "serve": "node --env-file-if-exists=.env server/index.mjs",
     "start": "npm run build && node --env-file-if-exists=.env server/index.mjs",
     "share": "npm run build && node --env-file-if-exists=.env server/index.mjs --tunnel",
+    "tunnel:install": "node scripts/get-cloudflared.mjs",
     "test": "vitest run"
   },
   "dependencies": {
