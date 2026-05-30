@@ -1,46 +1,51 @@
-import { CheckCircle2, Circle, Trophy } from 'lucide-react';
+import { CheckCircle2, Circle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { Vehicle } from '../types';
 
 type VehicleCardProps = {
   vehicle: Vehicle;
   hasVoted?: boolean;
+  /** Note moyenne déjà calculée pour ce véhicule (optionnel). */
+  averageScore?: number;
+  /** Nombre de votes (optionnel). */
+  voteCount?: number;
 };
 
-export default function VehicleCard({ vehicle, hasVoted = false }: VehicleCardProps) {
+/**
+ * Layout dense en "row" : photo gauche, méta centre, note + statut droite.
+ * Cliquable en entier — emmène vers /vehicles/:id pour voter / éditer le vote.
+ */
+export default function VehicleCard({ vehicle, hasVoted = false, averageScore, voteCount }: VehicleCardProps) {
+  const thumb = vehicle.imageUrl
+    ? { backgroundImage: `url(${vehicle.imageUrl})` }
+    : undefined;
+
   return (
-    <article className="card vehicle-card">
-      {vehicle.imageUrl ? (
-        <img
-          className="vehicle-img"
-          src={vehicle.imageUrl}
-          alt={vehicle.name}
-          loading="lazy"
-          onError={(event) => {
-            event.currentTarget.style.display = 'none';
-          }}
-        />
-      ) : (
-        <div className="vehicle-img" />
-      )}
-      <div className="vehicle-body grid">
-        <div className="between">
-          <span className={hasVoted ? 'badge ok' : 'badge wait'}>
-            {hasVoted ? <CheckCircle2 size={15} /> : <Circle size={15} />}
-            {hasVoted ? 'Déjà voté' : 'À noter'}
-          </span>
+    <Link className="vehicle-row" to={`/vehicles/${vehicle.id}`}>
+      <div className="v-thumb" style={thumb} />
+      <div className="v-meta">
+        <div className="v-tags">
+          <span className="eyebrow">{vehicle.category}</span>
+          {vehicle.plate && <span className="plate">{vehicle.plate}</span>}
           {vehicle.isDisqualified && <span className="badge closed">Disqualifié</span>}
         </div>
-        <div>
-          <h2 className="vehicle-title">{vehicle.name}</h2>
-          <p className="muted">Propriétaire : {vehicle.ownerName}</p>
-          <p className="muted">{vehicle.category}{vehicle.plate ? ` · Plaque ${vehicle.plate}` : ''}</p>
-        </div>
-        {vehicle.description && <p className="muted">{vehicle.description}</p>}
-        <Link className={hasVoted ? 'button' : 'button primary'} to={`/vehicles/${vehicle.id}`}>
-          <Trophy size={16} /> {hasVoted ? 'Voir / modifier le vote' : 'Voter'}
-        </Link>
+        <h2 className="v-name">{vehicle.name}</h2>
+        <div className="v-owner">par <strong style={{ color: 'var(--text-2)' }}>{vehicle.ownerName}</strong></div>
       </div>
-    </article>
+      <div className="v-right">
+        {hasVoted ? (
+          <span className="badge ok"><CheckCircle2 size={12} /> Voté</span>
+        ) : (
+          <span className="badge wait"><Circle size={12} /> À noter</span>
+        )}
+        <div className="v-score" style={{ color: typeof averageScore === 'number' && averageScore > 0 ? 'var(--text)' : 'var(--text-3)' }}>
+          {typeof averageScore === 'number' && averageScore > 0 ? averageScore.toFixed(1) : '—'}
+          <small>{typeof averageScore === 'number' && averageScore > 0 ? '/10' : ''}</small>
+        </div>
+        {typeof voteCount === 'number' && voteCount > 0 && (
+          <div className="mono" style={{ fontSize: '0.7rem', color: 'var(--text-3)' }}>{voteCount} votes</div>
+        )}
+      </div>
+    </Link>
   );
 }
