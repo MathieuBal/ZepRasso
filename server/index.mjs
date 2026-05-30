@@ -1,7 +1,7 @@
 import express from 'express';
 import os from 'node:os';
 import { spawn } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
@@ -26,8 +26,17 @@ const PORT = Number(process.env.PORT) || 4173;
 const ADMIN_CODE = process.env.ADMIN_CODE || 'zepadmin';
 const EVENT_ID = 'rasso';
 const WANT_TUNNEL = process.argv.includes('--tunnel') || process.env.TUNNEL === '1';
+// Quand on est derrière le tunnel cloudflared on doit croire les en-têtes
+// X-Forwarded-For / CF-Connecting-IP pour identifier la vraie IP. En accès
+// direct (LAN) on ne le fait surtout pas, sinon n'importe qui peut spoofer
+// son IP et fausser l'audit anti-triche.
+const TRUST_PROXY = WANT_TUNNEL || process.env.TRUST_PROXY === '1';
 const MAX_BACKUPS = 40;
 const BACKUP_DEBOUNCE_MS = 15 * 1000;
+const MAX_PHOTO_BYTES = 4 * 1024 * 1024; // 4 Mo après décodage base64
+const JSON_BODY_LIMIT = '5mb';
+const ADMIN_RATE_WINDOW_MS = 5 * 60 * 1000; // 5 min
+const ADMIN_RATE_MAX_FAILURES = 10;
 
 mkdirSync(PHOTOS_DIR, { recursive: true });
 mkdirSync(BACKUPS_DIR, { recursive: true });
@@ -91,11 +100,45 @@ function normalizeVote(raw) {
 }
 
 function clientIp(req) {
-  const cf = req.get('cf-connecting-ip');
-  if (cf) return cf.trim();
-  const xff = req.get('x-forwarded-for');
-  if (xff) return xff.split(',')[0].trim();
+  if (TRUST_PROXY) {
+    const cf = req.get('cf-connecting-ip');
+    if (cf) return cf.trim();
+    const xff = req.get('x-forwarded-for');
+    if (xff) return xff.split(',')[0].trim();
+  }
   return (req.socket && req.socket.remoteAddress) || '';
+}
+
+function safeCodeMatch(provided) {
+  const want = Buffer.from(ADMIN_CODE, 'utf8');
+  const got = Buffer.from(String(provided ?? ''), 'utf8');
+  if (want.length !== got.length) return false;
+  return timingSafeEqual(want, got);
+}
+
+// Limiteur d'essais d'authentification admin par IP. Fenêtre glissante simple
+// (Map IP -> [{ts}]); après ADMIN_RATE_MAX_FAILURES dans ADMIN_RATE_WINDOW_MS,
+// on renvoie 429 jusqu'à ce que la fenêtre se vide.
+const adminFailures = new Map();
+function checkAdminRate(ip) {
+  if (!ip) return { ok: true, retryAfterMs: 0 };
+  const now = Date.now();
+  const recent = (adminFailures.get(ip) || []).filter((ts) => now - ts < ADMIN_RATE_WINDOW_MS);
+  adminFailures.set(ip, recent);
+  if (recent.length >= ADMIN_RATE_MAX_FAILURES) {
+    const retryAfterMs = ADMIN_RATE_WINDOW_MS - (now - recent[0]);
+    return { ok: false, retryAfterMs };
+  }
+  return { ok: true, retryAfterMs: 0 };
+}
+function noteAdminFailure(ip) {
+  if (!ip) return;
+  const arr = adminFailures.get(ip) || [];
+  arr.push(Date.now());
+  adminFailures.set(ip, arr);
+}
+function clearAdminFailures(ip) {
+  if (ip) adminFailures.delete(ip);
 }
 
 function publicVote(vote) {
@@ -239,14 +282,26 @@ const MIME_EXT = {
   'image/gif': 'gif',
 };
 
+class PhotoRejected extends Error {
+  constructor(message) { super(message); this.name = 'PhotoRejected'; this.status = 400; }
+}
+
 function saveDataUrlPhoto(imageUrl) {
   if (typeof imageUrl !== 'string' || imageUrl === '') return undefined;
   if (!imageUrl.startsWith('data:')) return imageUrl;
-  const match = /^data:(image\/[a-zA-Z+]+);base64,(.+)$/s.exec(imageUrl);
-  if (!match) return undefined;
-  const ext = MIME_EXT[match[1]] || 'jpg';
+  const match = /^data:([a-zA-Z0-9/+.-]+);base64,(.+)$/s.exec(imageUrl);
+  if (!match) throw new PhotoRejected('Image illisible.');
+  const ext = MIME_EXT[match[1]];
+  // Whitelist stricte : pas de fallback silencieux, refus explicite des SVG
+  // (qui peuvent embarquer du JS) et de tout type inconnu.
+  if (!ext) throw new PhotoRejected('Format d\'image non supporté (JPEG, PNG, WEBP ou GIF uniquement).');
+  const buffer = Buffer.from(match[2], 'base64');
+  if (buffer.length === 0) throw new PhotoRejected('Image vide.');
+  if (buffer.length > MAX_PHOTO_BYTES) {
+    throw new PhotoRejected(`Image trop lourde (max ${Math.round(MAX_PHOTO_BYTES / 1024 / 1024)} Mo).`);
+  }
   const name = `${randomUUID()}.${ext}`;
-  writeFileSync(join(PHOTOS_DIR, name), Buffer.from(match[2], 'base64'));
+  writeFileSync(join(PHOTOS_DIR, name), buffer);
   return `/photos/${name}`;
 }
 
@@ -262,13 +317,33 @@ function removePhoto(imageUrl) {
 }
 
 const app = express();
-app.use(express.json({ limit: '12mb' }));
+app.use(express.json({ limit: JSON_BODY_LIMIT }));
 
-function requireAdmin(req, res, next) {
-  if ((req.get('x-admin-code') || '') !== ADMIN_CODE) {
-    res.status(401).json({ error: 'Code organisateur invalide.' });
+function rejectAdmin(req, res, message) {
+  const ip = clientIp(req);
+  noteAdminFailure(ip);
+  const { retryAfterMs } = checkAdminRate(ip);
+  if (retryAfterMs > 0) {
+    res.setHeader('Retry-After', Math.ceil(retryAfterMs / 1000));
+    res.status(429).json({ error: 'Trop de tentatives. Réessaie dans quelques minutes.' });
     return;
   }
+  res.status(401).json({ error: message });
+}
+
+function requireAdmin(req, res, next) {
+  const ip = clientIp(req);
+  const gate = checkAdminRate(ip);
+  if (!gate.ok) {
+    res.setHeader('Retry-After', Math.ceil(gate.retryAfterMs / 1000));
+    res.status(429).json({ error: 'Trop de tentatives. Réessaie dans quelques minutes.' });
+    return;
+  }
+  if (!safeCodeMatch(req.get('x-admin-code') || '')) {
+    rejectAdmin(req, res, 'Code organisateur invalide.');
+    return;
+  }
+  clearAdminFailures(ip);
   next();
 }
 
@@ -277,10 +352,18 @@ app.get('/api/vehicles', (_req, res) => res.json(db.vehicles));
 app.get('/api/votes', (_req, res) => res.json(db.votes.map(publicVote)));
 
 app.post('/api/admin/login', (req, res) => {
-  if ((req.body?.code || '') !== ADMIN_CODE) {
-    res.status(401).json({ error: 'Code organisateur incorrect.' });
+  const ip = clientIp(req);
+  const gate = checkAdminRate(ip);
+  if (!gate.ok) {
+    res.setHeader('Retry-After', Math.ceil(gate.retryAfterMs / 1000));
+    res.status(429).json({ error: 'Trop de tentatives. Réessaie dans quelques minutes.' });
     return;
   }
+  if (!safeCodeMatch(req.body?.code || '')) {
+    rejectAdmin(req, res, 'Code organisateur incorrect.');
+    return;
+  }
+  clearAdminFailures(ip);
   res.json({ ok: true });
 });
 
@@ -355,6 +438,16 @@ app.post('/api/vehicles', requireAdmin, (req, res) => {
     res.status(400).json({ error: 'Nom du véhicule et propriétaire sont obligatoires.' });
     return;
   }
+  let storedPhoto;
+  try {
+    storedPhoto = saveDataUrlPhoto(body.imageUrl);
+  } catch (err) {
+    if (err instanceof PhotoRejected) {
+      res.status(400).json({ error: err.message });
+      return;
+    }
+    throw err;
+  }
   const vehicle = {
     id: randomUUID(),
     eventId: EVENT_ID,
@@ -362,7 +455,7 @@ app.post('/api/vehicles', requireAdmin, (req, res) => {
     ownerName,
     category: String(body.category || '').trim(),
     plate: body.plate ? String(body.plate).trim() : undefined,
-    imageUrl: saveDataUrlPhoto(body.imageUrl),
+    imageUrl: storedPhoto,
     description: body.description ? String(body.description).trim() : undefined,
     isContestant: body.isContestant !== false,
     isDisqualified: Boolean(body.isDisqualified),
@@ -551,6 +644,7 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`  Code admin   : ${ADMIN_CODE}`);
   console.log('\n  Donnees    : data/db.json');
   console.log(`  Sauvegardes: data/backups/ (auto apres chaque changement, ${MAX_BACKUPS} max)`);
+  console.log(`  IP source  : ${TRUST_PROXY ? 'en-tetes proxy (CF-Connecting-IP / X-Forwarded-For)' : 'socket TCP direct'}`);
   console.log('  Ctrl+C pour arreter.');
   if (WANT_TUNNEL) startTunnel();
   else console.log('  Pour rendre l\'app accessible a distance : npm run share\n');
