@@ -97,8 +97,19 @@ export default function VehiclesPage() {
         ))}
       </div>
 
-      {loading && <p className="notice">Chargement des véhicules...</p>}
+      {loading && <p className="notice">Chargement des véhicules…</p>}
       {error && <p className="error">{error}</p>}
+
+      {!loading && !error && vehicles.length === 0 && (
+        <div className="panel">
+          <p className="lead" style={{ margin: 0 }}>Aucun véhicule pour le moment.</p>
+          <p className="muted" style={{ marginTop: 6 }}>L'organisateur va ajouter les bolides en compétition d'ici peu — reviens dans un instant.</p>
+        </div>
+      )}
+
+      {!loading && !error && vehicles.length > 0 && visible.length === 0 && (
+        <p className="notice">Aucun véhicule à afficher dans cette catégorie.</p>
+      )}
 
       <div className="grid" style={{ gap: 10 }}>
         {visible.map((vehicle) => {

@@ -2,21 +2,23 @@ import { ArrowRight, Trophy } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { getStoredPseudo } from '../lib/localSession';
-import { getVehicles, getVotes } from '../lib/repository';
+import { getEvent, getVehicles, getVotes } from '../lib/repository';
 import { calculateVehicleScores, findUserVote } from '../lib/scoring';
-import type { Vehicle, VehicleScore, Vote } from '../types';
+import type { RassoEvent, Vehicle, VehicleScore, Vote } from '../types';
 
 export default function HomePage() {
   const pseudo = getStoredPseudo();
+  const [event, setEvent] = useState<RassoEvent | null>(null);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [votes, setVotes] = useState<Vote[]>([]);
   const [scores, setScores] = useState<VehicleScore[]>([]);
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([getVehicles(), getVotes()])
-      .then(([loadedVehicles, loadedVotes]) => {
+    Promise.all([getEvent(), getVehicles(), getVotes()])
+      .then(([loadedEvent, loadedVehicles, loadedVotes]) => {
         if (cancelled) return;
+        setEvent(loadedEvent);
         setVehicles(loadedVehicles);
         setVotes(loadedVotes);
         setScores(calculateVehicleScores(loadedVehicles, loadedVotes));
@@ -25,6 +27,7 @@ export default function HomePage() {
     return () => { cancelled = true; };
   }, []);
 
+  const votesClosed = event?.status === 'closed';
   const totalVotes = votes.length;
   const uniqueVoters = new Set(votes.map((v) => v.voterPseudo)).size;
   const myVotes = pseudo
@@ -34,19 +37,30 @@ export default function HomePage() {
     ? Math.round((myVotes / vehicles.length) * 100)
     : 0;
   const leader = scores[0];
+  const primaryTo = votesClosed ? '/results' : pseudo ? '/vehicles' : '/login';
+  const primaryLabel = votesClosed
+    ? 'Voir le classement final'
+    : pseudo
+      ? 'Continuer à voter'
+      : 'Choisir mon pseudo';
 
   return (
     <section className="grid" style={{ gap: 22 }}>
       {/* Event card hero */}
       <section className="event-card">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-          <span className="badge ok badge-live" style={{ paddingLeft: 9 }}>EN COURS · LIVE</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+          <span className={`badge ${votesClosed ? 'closed' : 'ok badge-live'}`} style={{ paddingLeft: 9 }}>
+            {votesClosed ? 'VOTES FERMÉS' : 'VOTES OUVERTS'}
+          </span>
+          {event && <span className="badge wait">{event.name}</span>}
         </div>
         <h1 className="hero-title gradient-text" style={{ marginBottom: 12 }}>
-          Vote pour le plus beau<br/>bolide du rasso.
+          {votesClosed ? 'Le classement est tombé.' : <>Élis le plus beau<br/>bolide du rasso.</>}
         </h1>
         <p className="lead" style={{ maxWidth: 640 }}>
-          Ouvre le lien (ou scanne le QR code), entre ton pseudo RP, note chaque véhicule sur 5 critères. Les résultats tombent en direct.
+          {votesClosed
+            ? 'Les votes sont clos. Découvre quels bolides ont marqué les esprits cette fois-ci.'
+            : 'Tu choisis ton pseudo RP, tu notes chaque véhicule sur 5 critères (esthétique, cohérence, originalité, finition, RP), et le classement bouge en direct.'}
         </p>
 
         <div className="event-stats">
@@ -65,10 +79,12 @@ export default function HomePage() {
         </div>
 
         <div className="actions" style={{ marginTop: 22 }}>
-          <Link className="button primary" to={pseudo ? '/vehicles' : '/login'}>
-            {pseudo ? 'Continuer à voter' : 'Entrer mon pseudo'} <ArrowRight size={16} />
+          <Link className="button primary" to={primaryTo}>
+            {primaryLabel} <ArrowRight size={16} />
           </Link>
-          <Link className="button" to="/results"><Trophy size={16} /> Classement live</Link>
+          {!votesClosed && (
+            <Link className="button" to="/results"><Trophy size={16} /> Voir le classement</Link>
+          )}
         </div>
       </section>
 

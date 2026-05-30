@@ -22,19 +22,19 @@ export default function LoginPseudoPage() {
 
   return (
     <section className="grid two">
-      <PageHeader title="Ton pseudo RP">
-        <p className="lead">Il sert à mémoriser les véhicules que tu as déjà notés pendant l’événement.</p>
+      <PageHeader title="Avant de voter">
+        <p className="lead">Choisis le pseudo RP qui apparaîtra à côté de tes votes. Tu pourras le modifier à tout moment.</p>
       </PageHeader>
       <div className="panel">
         <form className="form" onSubmit={handleSubmit}>
           <label className="field">
-            <span className="label">Pseudo RP</span>
-            <input className="input" value={pseudo} onChange={(event) => setPseudo(event.target.value)} placeholder="Ex : Mathieu_B" />
+            <span className="label">Ton pseudo RP</span>
+            <input className="input" value={pseudo} onChange={(event) => setPseudo(event.target.value)} placeholder="Ex : Mathieu_B" autoFocus />
           </label>
           {error && <p className="error">{error}</p>}
           <div className="actions">
-            <button className="button primary" type="submit">Continuer</button>
-            <button className="button ghost" type="button" onClick={() => { clearStoredPseudo(); setPseudo(''); }}>Changer / effacer</button>
+            <button className="button primary" type="submit">C'est parti</button>
+            <button className="button ghost" type="button" onClick={() => { clearStoredPseudo(); setPseudo(''); }}>Effacer</button>
           </div>
         </form>
       </div>

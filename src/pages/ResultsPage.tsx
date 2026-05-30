@@ -23,11 +23,11 @@ export default function ResultsPage() {
 
   return (
     <section className="grid">
-      <PageHeader title="Résultats" badge={votesClosed ? 'Classement final' : 'Classement provisoire'} badgeTone={votesClosed ? 'ok' : 'closed'}>
+      <PageHeader title={votesClosed ? 'Classement final' : 'Classement en direct'} badge={votesClosed ? 'Votes fermés' : 'Votes ouverts'} badgeTone={votesClosed ? 'closed' : 'ok'}>
         <p className="lead">
           {votesClosed
-            ? 'Les votes sont clos : voici le classement définitif, calculé sur la moyenne des cinq critères.'
-            : 'Classement provisoire, calculé en direct sur la moyenne des cinq critères. Il se fige quand l’organisateur ferme les votes.'}
+            ? 'Voici le classement définitif, moyenne des cinq critères.'
+            : 'Moyenne des cinq critères, mise à jour à chaque nouveau vote. Il se fige quand l’organisateur clôt l’événement.'}
         </p>
       </PageHeader>
       {loading && <p className="notice">Calcul des résultats...</p>}
