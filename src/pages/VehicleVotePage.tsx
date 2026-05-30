@@ -19,15 +19,18 @@ export default function VehicleVotePage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let cancelled = false;
     Promise.all([getEvent(), getVehicles(), getVotes()])
       .then(([event, vehicles, votes]) => {
+        if (cancelled) return;
         setVotesClosed(event.status === 'closed');
         const currentVehicle = vehicles.find((item) => item.id === vehicleId) || null;
         setVehicle(currentVehicle);
         if (currentVehicle) setVote(findUserVote(votes, currentVehicle.id, pseudo));
       })
-      .catch((err: Error) => setError(err.message))
-      .finally(() => setLoading(false));
+      .catch((err: Error) => { if (!cancelled) setError(err.message); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [pseudo, vehicleId]);
 
   if (!pseudo) return <Navigate to="/login" replace />;

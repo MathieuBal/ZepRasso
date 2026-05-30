@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import ImagePicker from '../components/ImagePicker';
 import PageHeader from '../components/PageHeader';
 import ResultsTable from '../components/ResultsTable';
-import { isAdminUnlocked, lockAdmin, unlockAdmin } from '../lib/localSession';
+import { getAdminCode, isAdminUnlocked, lockAdmin, unlockAdmin } from '../lib/localSession';
 import {
   addVehicle,
   deleteVehicle,
@@ -62,7 +62,27 @@ export default function AdminPage() {
   }
 
   useEffect(() => {
-    if (unlocked) refresh().catch((err: Error) => setError(err.message));
+    if (!unlocked) return;
+    // Si le code admin stocké a changé côté serveur (ex. nouvel ADMIN_CODE
+    // dans le .env), on relâche le verrou plutôt que d'afficher un panneau
+    // qui renverra 401 sur chaque action.
+    let cancelled = false;
+    (async () => {
+      const stored = getAdminCode();
+      if (!stored || !(await verifyAdminCode(stored))) {
+        if (cancelled) return;
+        lockAdmin();
+        setUnlocked(false);
+        setError('Session expirée — entre à nouveau le code organisateur.');
+        return;
+      }
+      try {
+        await refresh();
+      } catch (err) {
+        if (!cancelled) setError((err as Error).message);
+      }
+    })();
+    return () => { cancelled = true; };
   }, [unlocked]);
 
   function handleLock() {

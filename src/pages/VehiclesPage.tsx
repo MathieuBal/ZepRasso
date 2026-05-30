@@ -1,11 +1,14 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import VehicleCard from '../components/VehicleCard';
 import { getStoredPseudo } from '../lib/localSession';
 import { getEvent, getVehicles, getVotes } from '../lib/repository';
 import { calculateVehicleScores, findUserVote } from '../lib/scoring';
+import { usePolling } from '../lib/usePolling';
 import type { Vehicle, VehicleScore, Vote } from '../types';
+
+const POLL_MS = 8000;
 
 export default function VehiclesPage() {
   const pseudo = getStoredPseudo();
@@ -15,17 +18,33 @@ export default function VehiclesPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'todo' | 'done'>('all');
+  const mountedRef = useRef(true);
 
   useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
+  const load = useCallback(() => {
     Promise.all([getEvent(), getVehicles(), getVotes()])
       .then(([event, loadedVehicles, loadedVotes]) => {
+        if (!mountedRef.current) return;
         setVotesClosed(event.status === 'closed');
         setVehicles(loadedVehicles);
         setVotes(loadedVotes);
+        setError(null);
       })
-      .catch((err: Error) => setError(err.message))
-      .finally(() => setLoading(false));
+      .catch((err: Error) => {
+        if (!mountedRef.current) return;
+        setError(err.message);
+      })
+      .finally(() => {
+        if (!mountedRef.current) return;
+        setLoading(false);
+      });
   }, []);
+
+  usePolling(load, POLL_MS);
 
   const scoresById = useMemo(() => {
     const map = new Map<string, VehicleScore>();

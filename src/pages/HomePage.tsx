@@ -1,10 +1,13 @@
 import { ArrowRight, Trophy } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { getStoredPseudo } from '../lib/localSession';
 import { getEvent, getVehicles, getVotes } from '../lib/repository';
 import { calculateVehicleScores, findUserVote } from '../lib/scoring';
+import { usePolling } from '../lib/usePolling';
 import type { RassoEvent, Vehicle, VehicleScore, Vote } from '../types';
+
+const POLL_MS = 8000;
 
 export default function HomePage() {
   const pseudo = getStoredPseudo();
@@ -12,20 +15,26 @@ export default function HomePage() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [votes, setVotes] = useState<Vote[]>([]);
   const [scores, setScores] = useState<VehicleScore[]>([]);
+  const mountedRef = useRef(true);
 
   useEffect(() => {
-    let cancelled = false;
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
+  const load = useCallback(() => {
     Promise.all([getEvent(), getVehicles(), getVotes()])
       .then(([loadedEvent, loadedVehicles, loadedVotes]) => {
-        if (cancelled) return;
+        if (!mountedRef.current) return;
         setEvent(loadedEvent);
         setVehicles(loadedVehicles);
         setVotes(loadedVotes);
         setScores(calculateVehicleScores(loadedVehicles, loadedVotes));
       })
       .catch(() => { /* silent on home, the other pages show errors */ });
-    return () => { cancelled = true; };
   }, []);
+
+  usePolling(load, POLL_MS);
 
   const votesClosed = event?.status === 'closed';
   const totalVotes = votes.length;
