@@ -75,16 +75,39 @@ toi, tu partages juste le lien (dans le Discord par exemple).
 > Note : ton PC doit rester allumé pendant tout l'event, et le trafic (photos
 > comprises) passe par ta connexion.
 
-### Code organisateur
+### Code organisateur (et `.env` persistant)
 
-Par défaut : `zepadmin`. Pour le changer, crée un fichier `.env` (voir
-`.env.example`) ou lance avec une variable d'environnement :
+Par défaut le code admin est `zepadmin`. **Recommandé** : copie
+`.env.example` en `.env` et mets ton vrai code dedans :
+
+```powershell
+# Windows PowerShell, dans le dossier du projet
+copy .env.example .env
+notepad .env       # mets ADMIN_CODE="ton-code"
+```
+
+À partir de là, `npm start` et `npm run share` chargent ton `.env`
+automatiquement — plus besoin de retaper le code à chaque lancement.
+Le fichier `.env` n'est pas versionné (`.gitignore`).
+
+Si tu préfères ne pas créer de `.env`, tu peux toujours passer la valeur
+à la volée :
+
+```powershell
+$env:ADMIN_CODE="ton-code"; npm start
+```
+
+### Relancer rapidement (sans rebuild)
+
+`npm start` reconstruit l'app à chaque fois (quelques secondes). Si tu
+veux juste relancer le serveur sans rebuild, utilise :
 
 ```bash
-ADMIN_CODE="mon-code" npm start
-# Port personnalisé :
-PORT=5000 npm start
+npm run serve
 ```
+
+`serve` saute la phase `vite build` et démarre directement avec le
+`dist/` existant. Utile pour les redémarrages rapides pendant un event.
 
 ## Où sont les données ?
 

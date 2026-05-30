@@ -7,9 +7,10 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "server": "node server/index.mjs",
-    "start": "npm run build && node server/index.mjs",
-    "share": "npm run build && node server/index.mjs --tunnel"
+    "server": "node --env-file-if-exists=.env server/index.mjs",
+    "serve": "node --env-file-if-exists=.env server/index.mjs",
+    "start": "npm run build && node --env-file-if-exists=.env server/index.mjs",
+    "share": "npm run build && node --env-file-if-exists=.env server/index.mjs --tunnel"
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
