@@ -14,7 +14,7 @@ export default function VehiclesPage() {
   const pseudo = getStoredPseudo();
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [votes, setVotes] = useState<Vote[]>([]);
-  const [votesClosed, setVotesClosed] = useState(false);
+  const [canVote, setCanVote] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'todo' | 'done'>('all');
@@ -29,7 +29,7 @@ export default function VehiclesPage() {
     Promise.all([getEvent(), getVehicles(), getVotes()])
       .then(([event, loadedVehicles, loadedVotes]) => {
         if (!mountedRef.current) return;
-        setVotesClosed(event.status === 'closed');
+        setCanVote(event.status === 'voting');
         setVehicles(loadedVehicles);
         setVotes(loadedVotes);
         setError(null);
@@ -74,8 +74,8 @@ export default function VehiclesPage() {
         badge={pseudo ? `Pseudo : ${pseudo}` : 'Pseudo requis'}
         badgeTone={pseudo ? 'ok' : 'wait'}
       >
-        {votesClosed ? (
-          <p className="notice">Les votes sont fermés. Découvre le <Link to="/results"><strong>classement final</strong></Link>.</p>
+        {!canVote ? (
+          <p className="notice">Les votes ne sont pas ouverts pour l'instant. Découvre le <Link to="/results"><strong>classement</strong></Link>.</p>
         ) : pseudo ? (
           <>
             <p className="lead" style={{ marginBottom: 12 }}>

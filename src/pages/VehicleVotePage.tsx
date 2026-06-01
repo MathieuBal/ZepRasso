@@ -13,7 +13,7 @@ export default function VehicleVotePage() {
   const pseudo = getStoredPseudo();
   const [vehicle, setVehicle] = useState<Vehicle | null>(null);
   const [vote, setVote] = useState<Vote | undefined>();
-  const [votesClosed, setVotesClosed] = useState(false);
+  const [canVote, setCanVote] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -23,7 +23,7 @@ export default function VehicleVotePage() {
     Promise.all([getEvent(), getVehicles(), getVotes()])
       .then(([event, vehicles, votes]) => {
         if (cancelled) return;
-        setVotesClosed(event.status === 'closed');
+        setCanVote(event.status === 'voting');
         const currentVehicle = vehicles.find((item) => item.id === vehicleId) || null;
         setVehicle(currentVehicle);
         if (currentVehicle) setVote(findUserVote(votes, currentVehicle.id, pseudo));
@@ -130,11 +130,11 @@ export default function VehicleVotePage() {
               {vote ? '✓ Vote déjà enregistré · tu peux le modifier' : 'Note ce véhicule sur 5 critères'}
             </span>
             <h2>{vote ? 'Modifier mon vote' : 'Mon vote'}</h2>
-            {votesClosed && <p className="notice">Les votes sont fermés. Tu peux consulter le <Link to="/results">classement final</Link>.</p>}
+            {!canVote && <p className="notice">Les votes ne sont pas ouverts. Tu peux consulter le <Link to="/results">classement</Link>.</p>}
             {vehicle.isDisqualified && <p className="error">Ce véhicule est disqualifié, le vote est désactivé.</p>}
             {error && <p className="error">{error}</p>}
             {saved && <p className="success">Vote enregistré, retour à la liste…</p>}
-            <VoteForm initialVote={vote} disabled={vehicle.isDisqualified || votesClosed} onSubmit={handleSubmit} />
+            <VoteForm initialVote={vote} disabled={vehicle.isDisqualified || !canVote} onSubmit={handleSubmit} />
           </>
         )}
       </div>

@@ -36,7 +36,11 @@ export default function HomePage() {
 
   usePolling(load, POLL_MS);
 
-  const votesClosed = event?.status === 'closed';
+  const status = event?.status;
+  const votesClosed = status === 'closed';
+  const isVoting = status === 'voting';
+  const isRegistrations = status === 'registrations';
+  const isDraft = status === 'draft';
   const totalVotes = votes.length;
   const uniqueVoters = new Set(votes.map((v) => v.voterPseudo)).size;
   const myVotes = pseudo
@@ -46,30 +50,60 @@ export default function HomePage() {
     ? Math.round((myVotes / vehicles.length) * 100)
     : 0;
   const leader = scores[0];
-  const primaryTo = votesClosed ? '/results' : pseudo ? '/vehicles' : '/login';
-  const primaryLabel = votesClosed
-    ? 'Voir le classement final'
-    : pseudo
-      ? 'Continuer à voter'
-      : 'Choisir mon pseudo';
+
+  // CTA principal selon la phase de l'événement.
+  let primaryTo = '/results';
+  let primaryLabel = 'Voir le classement final';
+  if (isRegistrations) {
+    primaryTo = '/register';
+    primaryLabel = "M'inscrire au concours";
+  } else if (isVoting) {
+    primaryTo = pseudo ? '/vehicles' : '/login';
+    primaryLabel = pseudo ? 'Continuer à voter' : 'Choisir mon pseudo';
+  } else if (isDraft) {
+    primaryTo = '/results';
+    primaryLabel = 'Voir le classement';
+  }
+
+  const statusBadge = votesClosed
+    ? { cls: 'closed', text: 'VOTES FERMÉS' }
+    : isVoting
+      ? { cls: 'ok badge-live', text: 'VOTES OUVERTS' }
+      : isRegistrations
+        ? { cls: 'wait', text: 'INSCRIPTIONS OUVERTES' }
+        : { cls: 'wait', text: 'EN PRÉPARATION' };
+
+  const heroTitle = votesClosed
+    ? 'Le classement est tombé.'
+    : isRegistrations
+      ? <>Inscris ton bolide<br/>au prochain rasso.</>
+      : isDraft
+        ? <>Le prochain rasso<br/>se prépare.</>
+        : <>Élis le plus beau<br/>bolide du rasso.</>;
+
+  const heroLead = votesClosed
+    ? 'Les votes sont clos. Découvre quels bolides ont marqué les esprits cette fois-ci.'
+    : isRegistrations
+      ? 'Les inscriptions sont ouvertes : inscris-toi pour présenter ta voiture. Les votes ouvriront le jour du rasso.'
+      : isDraft
+        ? "L'événement n'est pas encore lancé. Reviens bientôt pour t'inscrire ou voter."
+        : 'Tu choisis ton pseudo RP, tu notes chaque véhicule sur 5 critères (esthétique, cohérence, originalité, finition, RP), et le classement bouge en direct.';
 
   return (
     <section className="grid" style={{ gap: 22 }}>
       {/* Event card hero */}
       <section className="event-card">
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
-          <span className={`badge ${votesClosed ? 'closed' : 'ok badge-live'}`} style={{ paddingLeft: 9 }}>
-            {votesClosed ? 'VOTES FERMÉS' : 'VOTES OUVERTS'}
+          <span className={`badge ${statusBadge.cls}`} style={{ paddingLeft: 9 }}>
+            {statusBadge.text}
           </span>
           {event && <span className="badge wait">{event.name}</span>}
         </div>
         <h1 className="hero-title gradient-text" style={{ marginBottom: 12 }}>
-          {votesClosed ? 'Le classement est tombé.' : <>Élis le plus beau<br/>bolide du rasso.</>}
+          {heroTitle}
         </h1>
         <p className="lead" style={{ maxWidth: 640 }}>
-          {votesClosed
-            ? 'Les votes sont clos. Découvre quels bolides ont marqué les esprits cette fois-ci.'
-            : 'Tu choisis ton pseudo RP, tu notes chaque véhicule sur 5 critères (esthétique, cohérence, originalité, finition, RP), et le classement bouge en direct.'}
+          {heroLead}
         </p>
 
         <div className="event-stats">
@@ -91,14 +125,17 @@ export default function HomePage() {
           <Link className="button primary" to={primaryTo}>
             {primaryLabel} <ArrowRight size={16} />
           </Link>
-          {!votesClosed && (
+          {isVoting && (
             <Link className="button" to="/results"><Trophy size={16} /> Voir le classement</Link>
+          )}
+          {isRegistrations && (
+            <Link className="button" to="/vehicles">Voir les véhicules</Link>
           )}
         </div>
       </section>
 
       {/* Ma progression (si pseudo défini) */}
-      {pseudo && vehicles.length > 0 && (
+      {isVoting && pseudo && vehicles.length > 0 && (
         <div className="panel" style={{ display: 'grid', gap: 12 }}>
           <div className="between">
             <div>
