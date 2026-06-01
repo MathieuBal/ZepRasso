@@ -15,11 +15,13 @@ export function defaultDb(now = new Date().toISOString()) {
     event: {
       id: EVENT_ID,
       name: 'ZepRasso - Car Meet RP',
-      status: 'open',
+      status: 'draft',
+      entryFee: 0,
       createdAt: now,
     },
     vehicles: [],
     votes: [],
+    participants: [],
   };
 }
 
@@ -39,7 +41,33 @@ export function normalizeVehicle(raw, now = new Date().toISOString()) {
     description: raw.description ? String(raw.description).trim() : undefined,
     isContestant: raw.isContestant !== false,
     isDisqualified: Boolean(raw.isDisqualified),
+    // Lien vers un compte participant inscrit (optionnel). Conservé tel quel
+    // même si le participant a été supprimé (orphelin toléré) : le lien ne
+    // résoudra simplement plus, et l'anti-auto-vote retombe sur le pseudo.
+    participantId: raw.participantId ? String(raw.participantId) : undefined,
     createdAt: String(raw.createdAt || now),
+  };
+}
+
+// Un participant = un concurrent inscrit au concours (avec un compte lié à son
+// appareil via deviceToken). Style strict comme normalizeVote : on rejette une
+// entrée sans pseudo ni deviceToken.
+export function normalizeParticipant(raw, now = new Date().toISOString()) {
+  if (!raw || typeof raw !== 'object') return null;
+  const pseudo = String(raw.pseudo || '').trim();
+  const deviceToken = String(raw.deviceToken || '').trim();
+  if (!pseudo || !deviceToken) return null;
+  const method = raw.paymentMethod;
+  return {
+    id: String(raw.id || randomUUID()),
+    eventId: EVENT_ID,
+    pseudo,
+    deviceToken,
+    contactInfo: raw.contactInfo ? String(raw.contactInfo).trim() : undefined,
+    hasPaid: Boolean(raw.hasPaid),
+    paymentMethod: (method === 'cash' || method === 'virement') ? method : undefined,
+    note: raw.note ? String(raw.note).trim() : undefined,
+    registeredAt: String(raw.registeredAt || now),
   };
 }
 
@@ -78,15 +106,28 @@ export function normalizeDb(parsed, now = new Date().toISOString()) {
         .map((raw) => normalizeVote(raw, now))
         .filter((vote) => vote && vehicleIds.has(vote.vehicleId))
     : [];
+  const participants = Array.isArray(parsed?.participants)
+    ? parsed.participants.map((raw) => normalizeParticipant(raw, now)).filter(Boolean)
+    : [];
+  // Migration de statut : l'ancien 'open' (votes ouverts) devient 'voting'.
+  // Tout statut inconnu retombe sur 'draft' (état le plus sûr : ni vote ni
+  // inscription).
+  let status = event.status === 'open' ? 'voting' : event.status;
+  if (!['draft', 'registrations', 'voting', 'closed'].includes(status)) status = 'draft';
+  const entryFee = Number.isFinite(Number(event.entryFee)) && Number(event.entryFee) >= 0
+    ? Number(event.entryFee)
+    : 0;
   return {
     event: {
       id: EVENT_ID,
       name: String(event.name || base.event.name).trim() || base.event.name,
-      status: ['open', 'closed', 'draft'].includes(event.status) ? event.status : 'open',
+      status,
+      entryFee,
       createdAt: String(event.createdAt || base.event.createdAt),
     },
     vehicles,
     votes,
+    participants,
   };
 }
 
@@ -107,6 +148,36 @@ export function isOwnVehicle(vehicle, voterPseudo) {
   if (!vehicle || !voterPseudo) return false;
   return String(vehicle.ownerName || '').trim().toLowerCase() ===
     String(voterPseudo).trim().toLowerCase();
+}
+
+// Anti-auto-vote lié à l'appareil : si le véhicule est rattaché à un compte
+// participant, on refuse le vote venant du même jeton d'appareil que celui qui
+// s'est inscrit. Plus robuste que isOwnVehicle (impossible à contourner en
+// changeant de pseudo). Retombe à false si pas de lien ou pas de jeton.
+export function ownsVehicleByDevice(vehicle, participants, voterId) {
+  if (!vehicle || !vehicle.participantId || !voterId) return false;
+  const owner = (participants || []).find((p) => p.id === vehicle.participantId);
+  return Boolean(owner && owner.deviceToken && owner.deviceToken === voterId);
+}
+
+// Ne JAMAIS exposer deviceToken/contact/paiement d'un participant côté public.
+export function publicParticipant(participant) {
+  return { id: participant.id, pseudo: participant.pseudo };
+}
+
+// Calcule la répartition de la cagnotte. L'orga prend 10 % (arrondi), le reste
+// (net) est partagé sur le podium 60/25/15. Le gagnant absorbe l'arrondi pour
+// que first+second+third === net exactement (et orgaCut+podium === pool).
+export function computePrizePool(paidCount, entryFee) {
+  const count = Math.max(0, Math.floor(Number(paidCount) || 0));
+  const fee = Math.max(0, Number(entryFee) || 0);
+  const pool = count * fee;
+  const orgaCut = Math.round(pool * 0.10);
+  const net = pool - orgaCut;
+  const second = Math.round(net * 0.25);
+  const third = Math.round(net * 0.15);
+  const first = net - second - third;
+  return { pool, orgaCut, net, podium: { first, second, third } };
 }
 
 // Trouve un vote existant pour ce véhicule par voterId si fourni, sinon par

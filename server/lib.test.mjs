@@ -2,11 +2,14 @@ import { describe, expect, it } from 'vitest';
 import {
   clamp,
   computeAudit,
+  computePrizePool,
   defaultDb,
   findExistingVote,
   isOwnVehicle,
   normalizeDb,
+  normalizeParticipant,
   normalizeVote,
+  ownsVehicleByDevice,
   publicVote,
 } from './lib.mjs';
 
@@ -83,9 +86,45 @@ describe('normalizeDb', () => {
   it('returns a clean default when parsed is empty', () => {
     const db = normalizeDb({}, NOW);
     expect(db.event.id).toBe('rasso');
-    expect(db.event.status).toBe('open');
+    expect(db.event.status).toBe('draft');
+    expect(db.event.entryFee).toBe(0);
     expect(db.vehicles).toEqual([]);
     expect(db.votes).toEqual([]);
+    expect(db.participants).toEqual([]);
+  });
+
+  it('migrates the legacy "open" status to "voting"', () => {
+    const db = normalizeDb({ event: { name: 'X', status: 'open' } }, NOW);
+    expect(db.event.status).toBe('voting');
+  });
+
+  it('keeps an existing draft status as draft (no auto-promotion)', () => {
+    const db = normalizeDb({ event: { name: 'X', status: 'draft' } }, NOW);
+    expect(db.event.status).toBe('draft');
+  });
+
+  it('preserves participants and vehicle.participantId, tolerating orphans', () => {
+    const db = normalizeDb({
+      vehicles: [
+        { id: 'A', name: 'Sultan', ownerName: 'Sandro', participantId: 'p1' },
+        { id: 'B', name: 'Comet', ownerName: 'Ghost', participantId: 'gone' },
+      ],
+      participants: [
+        { id: 'p1', pseudo: 'Sandro', deviceToken: 'dev-1' },
+        { pseudo: 'NoToken' }, // invalide → filtré
+      ],
+    }, NOW);
+    expect(db.participants).toHaveLength(1);
+    expect(db.participants[0].id).toBe('p1');
+    expect(db.vehicles.find((v) => v.id === 'A').participantId).toBe('p1');
+    // Lien orphelin conservé tel quel (le participant n'existe pas).
+    expect(db.vehicles.find((v) => v.id === 'B').participantId).toBe('gone');
+  });
+
+  it('clamps a negative or junk entryFee to 0 and keeps a valid one', () => {
+    expect(normalizeDb({ event: { entryFee: -5 } }, NOW).event.entryFee).toBe(0);
+    expect(normalizeDb({ event: { entryFee: 'abc' } }, NOW).event.entryFee).toBe(0);
+    expect(normalizeDb({ event: { entryFee: 12 } }, NOW).event.entryFee).toBe(12);
   });
 
   it('drops orphan votes whose vehicle was deleted', () => {
@@ -101,15 +140,84 @@ describe('normalizeDb', () => {
     expect(db.votes[0].vehicleId).toBe('A');
   });
 
-  it('coerces an unknown event status to open', () => {
+  it('coerces an unknown event status to draft', () => {
     const db = normalizeDb({ event: { name: 'X', status: 'wat' } }, NOW);
-    expect(db.event.status).toBe('open');
+    expect(db.event.status).toBe('draft');
   });
 
   it('keeps a valid status and uses default name fallback', () => {
     const db = normalizeDb({ event: { name: '   ', status: 'closed' } }, NOW);
     expect(db.event.status).toBe('closed');
     expect(db.event.name).toBe(defaultDb(NOW).event.name);
+  });
+});
+
+describe('normalizeParticipant', () => {
+  it('returns null when pseudo or deviceToken is missing', () => {
+    expect(normalizeParticipant(null, NOW)).toBeNull();
+    expect(normalizeParticipant({ pseudo: 'A' }, NOW)).toBeNull();
+    expect(normalizeParticipant({ deviceToken: 'd1' }, NOW)).toBeNull();
+  });
+
+  it('trims, coerces fields and defaults registeredAt to now', () => {
+    const p = normalizeParticipant(
+      { pseudo: '  Sandro ', deviceToken: ' dev-1 ', contactInfo: ' Discord#1 ', hasPaid: 1, paymentMethod: 'cash', note: ' VIP ' },
+      NOW,
+    );
+    expect(p).toMatchObject({
+      eventId: 'rasso',
+      pseudo: 'Sandro',
+      deviceToken: 'dev-1',
+      contactInfo: 'Discord#1',
+      hasPaid: true,
+      paymentMethod: 'cash',
+      note: 'VIP',
+      registeredAt: NOW,
+    });
+    expect(typeof p.id).toBe('string');
+  });
+
+  it('drops an unknown payment method', () => {
+    const p = normalizeParticipant({ pseudo: 'A', deviceToken: 'd', paymentMethod: 'bitcoin' }, NOW);
+    expect(p.paymentMethod).toBeUndefined();
+  });
+});
+
+describe('computePrizePool', () => {
+  it('computes pool, orga cut and podium with invariants holding', () => {
+    const r = computePrizePool(7, 10);
+    expect(r.pool).toBe(70);
+    expect(r.orgaCut).toBe(7);
+    expect(r.net).toBe(63);
+    expect(r.podium.second).toBe(16); // round(63*0.25)=16
+    expect(r.podium.third).toBe(9);   // round(63*0.15)=9
+    expect(r.podium.first).toBe(38);  // 63-16-9
+    expect(r.podium.first + r.podium.second + r.podium.third).toBe(r.net);
+    expect(r.orgaCut + r.podium.first + r.podium.second + r.podium.third).toBe(r.pool);
+  });
+
+  it('returns all zeros when no one paid', () => {
+    expect(computePrizePool(0, 10)).toEqual({ pool: 0, orgaCut: 0, net: 0, podium: { first: 0, second: 0, third: 0 } });
+  });
+
+  it('treats junk inputs as zero', () => {
+    expect(computePrizePool('x', null).pool).toBe(0);
+    expect(computePrizePool(-3, -5).pool).toBe(0);
+  });
+});
+
+describe('ownsVehicleByDevice (device-bound self-vote guard)', () => {
+  const participants = [{ id: 'p1', pseudo: 'Sandro', deviceToken: 'dev-1' }];
+
+  it('is true when the voter device matches the owning participant', () => {
+    expect(ownsVehicleByDevice({ participantId: 'p1' }, participants, 'dev-1')).toBe(true);
+  });
+
+  it('is false on token mismatch, missing link, missing token or unresolved participant', () => {
+    expect(ownsVehicleByDevice({ participantId: 'p1' }, participants, 'dev-2')).toBe(false);
+    expect(ownsVehicleByDevice({}, participants, 'dev-1')).toBe(false);
+    expect(ownsVehicleByDevice({ participantId: 'p1' }, participants, '')).toBe(false);
+    expect(ownsVehicleByDevice({ participantId: 'gone' }, participants, 'dev-1')).toBe(false);
   });
 });
 
