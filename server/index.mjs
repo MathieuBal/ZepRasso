@@ -7,6 +7,7 @@ import {
   clamp,
   computeAudit,
   defaultDb,
+  computePrizePool,
   findExistingVote,
   isOwnVehicle,
   normalizeDb,
@@ -429,6 +430,14 @@ app.get('/api/register/status', (req, res) => {
   const token = String(req.query.deviceToken || '').trim();
   const me = token ? db.participants.find((p) => p.deviceToken === token) : null;
   res.json(me ? { registered: true, pseudo: me.pseudo, id: me.id } : { registered: false });
+});
+
+// Résumé de la cagnotte (public) : montants seulement, aucune donnée perso.
+// Permet d'afficher l'enjeu sur le podium pour motiver les votes.
+app.get('/api/prize', (_req, res) => {
+  const paidCount = db.participants.filter((p) => p.hasPaid).length;
+  const fee = db.event.entryFee || 0;
+  res.json({ entryFee: fee, paidCount, ...computePrizePool(paidCount, fee) });
 });
 
 app.patch('/api/event', requireAdmin, (req, res) => {

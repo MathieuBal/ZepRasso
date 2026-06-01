@@ -1,5 +1,5 @@
 import { getAdminCode, getVoterId } from './localSession';
-import type { AuditReport, Participant, PaymentMethod, RassoEvent, Vehicle, Vote, VoteInput } from '../types';
+import type { AuditReport, Participant, PaymentMethod, PrizePool, RassoEvent, Vehicle, Vote, VoteInput } from '../types';
 
 export const EVENT_ID = 'rasso';
 
@@ -45,6 +45,12 @@ export type NetworkInfo = {
 
 export function getNetwork(): Promise<NetworkInfo> {
   return api<NetworkInfo>('/network');
+}
+
+export type PrizeSummary = PrizePool & { entryFee: number; paidCount: number };
+
+export function getPrize(): Promise<PrizeSummary> {
+  return api<PrizeSummary>('/prize');
 }
 
 export function updateEvent(patch: { name?: string; status?: RassoEvent['status']; entryFee?: number }): Promise<RassoEvent> {

@@ -1,7 +1,8 @@
-import type { VehicleScore } from '../types';
+import type { PrizePool, VehicleScore } from '../types';
 
 type ResultsTableProps = {
   scores: VehicleScore[];
+  prize?: PrizePool;
 };
 
 const bg = (url?: string) =>
@@ -10,7 +11,14 @@ const bg = (url?: string) =>
 const rawNote = (score: VehicleScore) =>
   score.voteCount > 0 ? `Brut ${score.average.toFixed(1)}` : 'Pas encore noté';
 
-export default function ResultsTable({ scores }: ResultsTableProps) {
+// Étiquette de gain pour une place du podium (1-based), si une cagnotte existe.
+function prizeFor(rank: number, prize?: PrizePool): string | null {
+  if (!prize || prize.net <= 0) return null;
+  const amount = rank === 1 ? prize.podium.first : rank === 2 ? prize.podium.second : rank === 3 ? prize.podium.third : 0;
+  return amount > 0 ? `${amount} €` : null;
+}
+
+export default function ResultsTable({ scores, prize }: ResultsTableProps) {
   if (scores.length === 0) {
     return <p className="notice">Aucun résultat pour le moment. Les votes apparaissent ici en direct.</p>;
   }
@@ -38,7 +46,7 @@ export default function ResultsTable({ scores }: ResultsTableProps) {
       <article className="podium-winner" aria-label={`${first.vehicle.name} en première place`}>
         <div className="pw-img" style={bg(first.vehicle.imageUrl)} />
         <div className="pw-overlay" />
-        <span className="pw-medal">★ #1 · OR</span>
+        <span className="pw-medal">★ #1 · OR{prizeFor(1, prize) ? ` · ${prizeFor(1, prize)}` : ''}</span>
         <div className="pw-score">{first.weightedAverage.toFixed(1)}</div>
         <div className="pw-info">
           <h2 className="pw-name">{first.vehicle.name}</h2>
@@ -59,7 +67,7 @@ export default function ResultsTable({ scores }: ResultsTableProps) {
             <article className="podium-step silver" aria-label={`${second.vehicle.name} en deuxième place`}>
               <div className="ps-img" style={bg(second.vehicle.imageUrl)} />
               <div className="ps-overlay" />
-              <span className="ps-medal">#2 · ARGENT</span>
+              <span className="ps-medal">#2 · ARGENT{prizeFor(2, prize) ? ` · ${prizeFor(2, prize)}` : ''}</span>
               <div className="ps-score">{second.weightedAverage.toFixed(1)}</div>
               <div className="ps-info">
                 <h3 className="ps-name">{second.vehicle.name}</h3>
@@ -71,7 +79,7 @@ export default function ResultsTable({ scores }: ResultsTableProps) {
             <article className="podium-step bronze" aria-label={`${third.vehicle.name} en troisième place`}>
               <div className="ps-img" style={bg(third.vehicle.imageUrl)} />
               <div className="ps-overlay" />
-              <span className="ps-medal">#3 · BRONZE</span>
+              <span className="ps-medal">#3 · BRONZE{prizeFor(3, prize) ? ` · ${prizeFor(3, prize)}` : ''}</span>
               <div className="ps-score">{third.weightedAverage.toFixed(1)}</div>
               <div className="ps-info">
                 <h3 className="ps-name">{third.vehicle.name}</h3>
