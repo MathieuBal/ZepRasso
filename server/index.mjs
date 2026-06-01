@@ -484,6 +484,10 @@ app.post('/api/admin/restore', requireAdmin, (req, res) => {
   res.json({ ok: true, vehicles: db.vehicles.length, votes: db.votes.length });
 });
 
+app.get('/api/health', (_req, res) => {
+  res.json({ ok: true, uptime: Math.floor(process.uptime()) });
+});
+
 app.use('/photos', express.static(PHOTOS_DIR));
 app.use(express.static(DIST_DIR));
 
@@ -496,7 +500,7 @@ app.use((req, res) => {
 });
 
 // eslint-disable-next-line no-unused-vars
-app.use((err, _req, res, _next) => {
+app.use((err, req, res, _next) => {
   const status = err.status || err.statusCode || 500;
   if (status >= 400 && status < 500) {
     if (!res.headersSent) res.status(status).json({ error: 'Requête invalide.' });
