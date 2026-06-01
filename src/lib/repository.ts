@@ -1,5 +1,5 @@
 import { getAdminCode, getVoterId } from './localSession';
-import type { AuditReport, RassoEvent, Vehicle, Vote, VoteInput } from '../types';
+import type { AuditReport, Participant, PaymentMethod, RassoEvent, Vehicle, Vote, VoteInput } from '../types';
 
 export const EVENT_ID = 'rasso';
 
@@ -47,8 +47,41 @@ export function getNetwork(): Promise<NetworkInfo> {
   return api<NetworkInfo>('/network');
 }
 
-export function updateEvent(patch: { name?: string; status?: RassoEvent['status'] }): Promise<RassoEvent> {
+export function updateEvent(patch: { name?: string; status?: RassoEvent['status']; entryFee?: number }): Promise<RassoEvent> {
   return api<RassoEvent>('/event', { method: 'PATCH', headers: adminHeaders(), body: JSON.stringify(patch) });
+}
+
+export type RegistrationStatus = { registered: boolean; pseudo?: string; id?: string };
+
+export function registerParticipant(input: { pseudo: string; contactInfo?: string }): Promise<{ id: string; pseudo: string; registered: boolean }> {
+  return api('/register', {
+    method: 'POST',
+    body: JSON.stringify({ ...input, deviceToken: getVoterId() }),
+  });
+}
+
+export function getRegistrationStatus(): Promise<RegistrationStatus> {
+  return api<RegistrationStatus>(`/register/status?deviceToken=${encodeURIComponent(getVoterId())}`);
+}
+
+export function getParticipants(): Promise<Participant[]> {
+  return api<Participant[]>('/participants', { headers: adminHeaders() });
+}
+
+export type ParticipantPatch = {
+  hasPaid?: boolean;
+  paymentMethod?: PaymentMethod | null;
+  note?: string;
+  pseudo?: string;
+  contactInfo?: string;
+};
+
+export function updateParticipant(id: string, patch: ParticipantPatch): Promise<Participant> {
+  return api<Participant>(`/participants/${id}`, { method: 'PATCH', headers: adminHeaders(), body: JSON.stringify(patch) });
+}
+
+export async function deleteParticipant(id: string): Promise<void> {
+  await api(`/participants/${id}`, { method: 'DELETE', headers: adminHeaders() });
 }
 
 export function getVehicles(): Promise<Vehicle[]> {

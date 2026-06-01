@@ -1,10 +1,32 @@
-export type EventStatus = 'draft' | 'open' | 'closed';
+export type EventStatus = 'draft' | 'registrations' | 'voting' | 'closed';
 
 export type RassoEvent = {
   id: string;
   name: string;
   status: EventStatus;
+  entryFee: number;
   createdAt: string;
+};
+
+export type PaymentMethod = 'cash' | 'virement';
+
+export type Participant = {
+  id: string;
+  eventId: string;
+  pseudo: string;
+  deviceToken: string;
+  contactInfo?: string;
+  hasPaid: boolean;
+  paymentMethod?: PaymentMethod;
+  note?: string;
+  registeredAt: string;
+};
+
+export type PrizePool = {
+  pool: number;
+  orgaCut: number;
+  net: number;
+  podium: { first: number; second: number; third: number };
 };
 
 export type Vehicle = {
@@ -18,6 +40,7 @@ export type Vehicle = {
   description?: string;
   isContestant: boolean;
   isDisqualified: boolean;
+  participantId?: string;
   createdAt: string;
 };
 
