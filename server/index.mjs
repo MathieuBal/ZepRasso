@@ -10,7 +10,9 @@ import {
   findExistingVote,
   isOwnVehicle,
   normalizeDb,
+  normalizeParticipant,
   normalizeVote,
+  ownsVehicleByDevice,
   publicVote,
 } from './lib.mjs';
 import { fileURLToPath } from 'node:url';
@@ -332,8 +334,8 @@ app.post('/api/admin/login', (req, res) => {
 });
 
 app.post('/api/votes', (req, res) => {
-  if (db.event.status === 'closed') {
-    res.status(403).json({ error: 'Les votes sont fermés.' });
+  if (db.event.status !== 'voting') {
+    res.status(403).json({ error: 'Les votes ne sont pas ouverts.' });
     return;
   }
   const body = req.body || {};
@@ -349,7 +351,8 @@ app.post('/api/votes', (req, res) => {
     res.status(404).json({ error: 'Véhicule introuvable.' });
     return;
   }
-  if (isOwnVehicle(vehicle, voterPseudo)) {
+  // Anti-auto-vote : d'abord lié à l'appareil (robuste), puis fallback pseudo.
+  if (ownsVehicleByDevice(vehicle, db.participants, voterId) || isOwnVehicle(vehicle, voterPseudo)) {
     res.status(403).json({ error: 'Tu ne peux pas voter pour ton propre véhicule.' });
     return;
   }
@@ -384,13 +387,60 @@ app.post('/api/votes', (req, res) => {
   res.json({ ok: true });
 });
 
+// Inscription au concours (public, uniquement en phase "registrations").
+// Idempotent : un appareil déjà inscrit met juste à jour son pseudo/contact,
+// son statut de paiement est préservé. On ne renvoie jamais le deviceToken ni
+// les infos de contact dans la réponse.
+app.post('/api/register', (req, res) => {
+  if (db.event.status !== 'registrations') {
+    res.status(403).json({ error: 'Les inscriptions ne sont pas ouvertes.' });
+    return;
+  }
+  const body = req.body || {};
+  const pseudo = String(body.pseudo || '').trim();
+  const deviceToken = String(body.deviceToken || '').trim();
+  if (!pseudo || !deviceToken) {
+    res.status(400).json({ error: 'Pseudo requis.' });
+    return;
+  }
+  const now = new Date().toISOString();
+  const existing = db.participants.find((p) => p.deviceToken === deviceToken);
+  if (existing) {
+    existing.pseudo = pseudo;
+    if (typeof body.contactInfo === 'string') {
+      existing.contactInfo = body.contactInfo.trim() || undefined;
+    }
+    saveDb();
+    res.json({ id: existing.id, pseudo: existing.pseudo, registered: true });
+    return;
+  }
+  const participant = normalizeParticipant(
+    { pseudo, deviceToken, contactInfo: body.contactInfo, registeredAt: now },
+    now,
+  );
+  db.participants.push(participant);
+  saveDb();
+  res.json({ id: participant.id, pseudo: participant.pseudo, registered: true });
+});
+
+// Statut d'inscription de l'appareil appelant uniquement (le jeton est passé
+// en query) : ne révèle aucune info sur les autres participants.
+app.get('/api/register/status', (req, res) => {
+  const token = String(req.query.deviceToken || '').trim();
+  const me = token ? db.participants.find((p) => p.deviceToken === token) : null;
+  res.json(me ? { registered: true, pseudo: me.pseudo, id: me.id } : { registered: false });
+});
+
 app.patch('/api/event', requireAdmin, (req, res) => {
   const body = req.body || {};
   if (typeof body.name === 'string' && body.name.trim()) {
     db.event.name = body.name.trim();
   }
-  if (typeof body.status === 'string' && ['open', 'closed'].includes(body.status)) {
+  if (typeof body.status === 'string' && ['draft', 'registrations', 'voting', 'closed'].includes(body.status)) {
     db.event.status = body.status;
+  }
+  if (typeof body.entryFee === 'number' && Number.isFinite(body.entryFee) && body.entryFee >= 0) {
+    db.event.entryFee = body.entryFee;
   }
   saveDb();
   res.json(db.event);
@@ -399,7 +449,18 @@ app.patch('/api/event', requireAdmin, (req, res) => {
 app.post('/api/vehicles', requireAdmin, (req, res) => {
   const body = req.body || {};
   const name = String(body.name || '').trim();
-  const ownerName = String(body.ownerName || '').trim();
+  // Si un participant inscrit est fourni, le propriétaire est forcé à son
+  // pseudo (lien cohérent). Sinon on garde le nom libre (cas manuel/legacy).
+  const participantId = body.participantId ? String(body.participantId) : undefined;
+  let linked = null;
+  if (participantId) {
+    linked = db.participants.find((p) => p.id === participantId);
+    if (!linked) {
+      res.status(400).json({ error: 'Participant introuvable.' });
+      return;
+    }
+  }
+  const ownerName = linked ? linked.pseudo : String(body.ownerName || '').trim();
   if (!name || !ownerName) {
     res.status(400).json({ error: 'Nom du véhicule et propriétaire sont obligatoires.' });
     return;
@@ -425,6 +486,7 @@ app.post('/api/vehicles', requireAdmin, (req, res) => {
     description: body.description ? String(body.description).trim() : undefined,
     isContestant: body.isContestant !== false,
     isDisqualified: Boolean(body.isDisqualified),
+    participantId: linked ? linked.id : undefined,
     createdAt: new Date().toISOString(),
   };
   db.vehicles.push(vehicle);
@@ -462,6 +524,53 @@ app.delete('/api/vehicles/:id', requireAdmin, (req, res) => {
 app.delete('/api/votes', requireAdmin, (_req, res) => {
   backupDb('avant-reset-votes');
   db.votes = [];
+  saveDb();
+  res.json({ ok: true });
+});
+
+// Liste complète des inscrits (admin uniquement : contient contact + paiement).
+app.get('/api/participants', requireAdmin, (_req, res) => {
+  res.json(db.participants);
+});
+
+app.patch('/api/participants/:id', requireAdmin, (req, res) => {
+  const participant = db.participants.find((p) => p.id === req.params.id);
+  if (!participant) {
+    res.status(404).json({ error: 'Participant introuvable.' });
+    return;
+  }
+  const body = req.body || {};
+  if (typeof body.hasPaid === 'boolean') participant.hasPaid = body.hasPaid;
+  if (body.paymentMethod === 'cash' || body.paymentMethod === 'virement') {
+    participant.paymentMethod = body.paymentMethod;
+  } else if (body.paymentMethod === null || body.paymentMethod === '') {
+    participant.paymentMethod = undefined;
+  }
+  if (typeof body.note === 'string') participant.note = body.note.trim() || undefined;
+  if (typeof body.pseudo === 'string' && body.pseudo.trim()) {
+    participant.pseudo = body.pseudo.trim();
+    // Garder l'affichage du véhicule lié cohérent avec le pseudo.
+    db.vehicles.forEach((v) => {
+      if (v.participantId === participant.id) v.ownerName = participant.pseudo;
+    });
+  }
+  if (typeof body.contactInfo === 'string') {
+    participant.contactInfo = body.contactInfo.trim() || undefined;
+  }
+  saveDb();
+  res.json(participant);
+});
+
+app.delete('/api/participants/:id', requireAdmin, (req, res) => {
+  const index = db.participants.findIndex((p) => p.id === req.params.id);
+  if (index === -1) {
+    res.status(404).json({ error: 'Participant introuvable.' });
+    return;
+  }
+  backupDb('avant-suppression-participant');
+  // On ne supprime PAS les véhicules liés : le lien devient orphelin (toléré),
+  // l'orga peut le réattribuer ou supprimer le véhicule séparément.
+  db.participants.splice(index, 1);
   saveDb();
   res.json({ ok: true });
 });
