@@ -29,7 +29,7 @@ export default function LoginPseudoPage() {
         <form className="form" onSubmit={handleSubmit}>
           <label className="field">
             <span className="label">Ton pseudo RP</span>
-            <input className="input" value={pseudo} onChange={(event) => setPseudo(event.target.value)} placeholder="Ex : Mathieu_B" autoFocus />
+            <input className="input" value={pseudo} onChange={(event) => setPseudo(event.target.value)} placeholder="Ex : Sandro_Vega" autoFocus />
           </label>
           {error && <p className="error">{error}</p>}
           <div className="actions">
