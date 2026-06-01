@@ -60,7 +60,15 @@ export type AuditReport = {
 export type VehicleScore = {
   vehicle: Vehicle;
   voteCount: number;
+  /** Moyenne brute des votes reçus (affichage transparent). */
   average: number;
+  /** Moyenne pondérée bayésienne utilisée pour le classement final.
+   *  Compense le biais des véhicules peu notés. */
+  weightedAverage: number;
+  /** Vrai si le véhicule a reçu assez de votes pour être classé (quorum). */
+  eligibleForRank: boolean;
+  /** Seuil de votes en vigueur pour cet event (info UI). */
+  quorum: number;
   averagesByCriterion: {
     aesthetics: number;
     coherence: number;

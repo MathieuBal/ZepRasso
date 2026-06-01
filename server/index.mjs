@@ -8,6 +8,7 @@ import {
   computeAudit,
   defaultDb,
   findExistingVote,
+  isOwnVehicle,
   normalizeDb,
   normalizeVote,
   publicVote,
@@ -343,8 +344,13 @@ app.post('/api/votes', (req, res) => {
     res.status(400).json({ error: 'Pseudo et véhicule requis.' });
     return;
   }
-  if (!db.vehicles.some((vehicle) => vehicle.id === vehicleId)) {
+  const vehicle = db.vehicles.find((v) => v.id === vehicleId);
+  if (!vehicle) {
     res.status(404).json({ error: 'Véhicule introuvable.' });
+    return;
+  }
+  if (isOwnVehicle(vehicle, voterPseudo)) {
+    res.status(403).json({ error: 'Tu ne peux pas voter pour ton propre véhicule.' });
     return;
   }
   const scores = {

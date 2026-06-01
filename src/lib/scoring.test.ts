@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { calculateVehicleScores, calculateVoteAverage, findUserVote } from './scoring';
+import { calculateVehicleScores, calculateVoteAverage, findUserVote, isOwnVehicle } from './scoring';
 import type { Vehicle, Vote } from '../types';
 
 function vehicle(overrides: Partial<Vehicle> = {}): Vehicle {
@@ -63,18 +63,57 @@ describe('calculateVehicleScores', () => {
     expect(scores.map((s) => s.vehicle.id)).toEqual(['A']);
   });
 
-  it('orders by average desc, then by vote count desc', () => {
+  it('disqualifies lone-vote outliers from the ranking via quorum', () => {
+    // A : 1 vote à 10/10 (sous quorum) — ne peut pas occuper le podium.
+    // B : 5 votes à 8/10 — quorum atteint, prend la tête malgré sa note plus basse.
     const scores = calculateVehicleScores(
-      [vehicle({ id: 'A' }), vehicle({ id: 'B' }), vehicle({ id: 'C' })],
+      [vehicle({ id: 'A' }), vehicle({ id: 'B' })],
       [
-        vote({ id: '1', vehicleId: 'A', aesthetics: 8, coherence: 8, originality: 8, details: 8, rpPresentation: 8 }),
-        vote({ id: '2', vehicleId: 'B', aesthetics: 10, coherence: 10, originality: 10, details: 10, rpPresentation: 10 }),
-        // Tie on average (8) but C has 2 votes vs A's 1.
-        vote({ id: '3', vehicleId: 'C', aesthetics: 8, coherence: 8, originality: 8, details: 8, rpPresentation: 8, voterPseudo: 'p1' }),
-        vote({ id: '4', vehicleId: 'C', aesthetics: 8, coherence: 8, originality: 8, details: 8, rpPresentation: 8, voterPseudo: 'p2' }),
+        vote({ id: 'a1', vehicleId: 'A', voterPseudo: 'lone', aesthetics: 10, coherence: 10, originality: 10, details: 10, rpPresentation: 10 }),
+        ...Array.from({ length: 5 }, (_, i) =>
+          vote({ id: `b${i}`, vehicleId: 'B', voterPseudo: `p${i}`, aesthetics: 8, coherence: 8, originality: 8, details: 8, rpPresentation: 8 }),
+        ),
       ],
     );
-    expect(scores.map((s) => s.vehicle.id)).toEqual(['B', 'C', 'A']);
+    expect(scores.map((s) => s.vehicle.id)).toEqual(['B', 'A']);
+    expect(scores[0].eligibleForRank).toBe(true);
+    expect(scores[1].eligibleForRank).toBe(false);
+    expect(scores[1].average).toBe(10); // la note brute est conservée pour info
+  });
+
+  it('smooths the weighted average toward the global mean for low-vote eligible cars', () => {
+    // 2 véhicules tous deux au quorum (3 votes chacun, distinctVoters=6, quorum=3),
+    // A à 10/10, B à 6/10 → la pondération rapproche les notes sans les inverser.
+    const scores = calculateVehicleScores(
+      [vehicle({ id: 'A' }), vehicle({ id: 'B' })],
+      [
+        ...Array.from({ length: 3 }, (_, i) =>
+          vote({ id: `a${i}`, vehicleId: 'A', voterPseudo: `pa${i}`, aesthetics: 10, coherence: 10, originality: 10, details: 10, rpPresentation: 10 }),
+        ),
+        ...Array.from({ length: 3 }, (_, i) =>
+          vote({ id: `b${i}`, vehicleId: 'B', voterPseudo: `pb${i}`, aesthetics: 6, coherence: 6, originality: 6, details: 6, rpPresentation: 6 }),
+        ),
+      ],
+    );
+    expect(scores[0].average).toBe(10);
+    expect(scores[0].weightedAverage).toBeLessThan(10);
+    expect(scores[1].weightedAverage).toBeGreaterThan(6);
+  });
+
+  it('tiebreaks on vote count when weighted scores match', () => {
+    // 3 votes par véhicule pour atteindre le quorum à 6 votants distincts.
+    const scores = calculateVehicleScores(
+      [vehicle({ id: 'A' }), vehicle({ id: 'B' })],
+      [
+        ...Array.from({ length: 3 }, (_, i) =>
+          vote({ id: `a${i}`, vehicleId: 'A', voterPseudo: `pa${i}`, aesthetics: 8, coherence: 8, originality: 8, details: 8, rpPresentation: 8 }),
+        ),
+        ...Array.from({ length: 4 }, (_, i) =>
+          vote({ id: `b${i}`, vehicleId: 'B', voterPseudo: `pb${i}`, aesthetics: 8, coherence: 8, originality: 8, details: 8, rpPresentation: 8 }),
+        ),
+      ],
+    );
+    expect(scores.map((s) => s.vehicle.id)).toEqual(['B', 'A']);
   });
 
   it('averages each criterion independently and rounds to one decimal', () => {
@@ -94,6 +133,19 @@ describe('calculateVehicleScores', () => {
     });
     expect(scores[0].voteCount).toBe(2);
     expect(scores[0].average).toBe(7.1);
+  });
+});
+
+describe('isOwnVehicle', () => {
+  it('matches case-insensitively with trimming', () => {
+    expect(isOwnVehicle({ ownerName: 'Sandro_Vega' }, 'sandro_vega')).toBe(true);
+    expect(isOwnVehicle({ ownerName: '  Sandro ' }, 'sandro')).toBe(true);
+  });
+
+  it('returns false when pseudo is empty or different', () => {
+    expect(isOwnVehicle({ ownerName: 'Sandro' }, null)).toBe(false);
+    expect(isOwnVehicle({ ownerName: 'Sandro' }, '')).toBe(false);
+    expect(isOwnVehicle({ ownerName: 'Sandro' }, 'Mario')).toBe(false);
   });
 });
 

@@ -51,8 +51,11 @@ export default function ResultsPage() {
       >
         <p className="lead">
           {votesClosed
-            ? 'Voici le classement définitif, moyenne des cinq critères.'
-            : 'Moyenne des cinq critères, mise à jour à chaque nouveau vote. Il se fige quand l’organisateur clôt l’événement.'}
+            ? 'Classement définitif, calculé sur les cinq critères.'
+            : 'Mis à jour à chaque nouveau vote. Il se fige quand l’organisateur clôt l’événement.'}
+        </p>
+        <p className="muted" style={{ marginTop: 6, fontSize: '0.85rem' }}>
+          Pour éviter qu'un véhicule peu noté ne gagne par chance, deux règles s'appliquent : (1) <strong>quorum</strong> — un véhicule doit avoir été noté par au moins la moitié des votants pour entrer dans le classement ; (2) la note finale est <strong>pondérée</strong> (rapprochée de la moyenne globale) pour les véhicules à faible nombre de votes. La moyenne brute reste affichée à titre indicatif.
         </p>
       </PageHeader>
       {loading && <p className="notice">Calcul des résultats…</p>}

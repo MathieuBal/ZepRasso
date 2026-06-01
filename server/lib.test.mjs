@@ -4,6 +4,7 @@ import {
   computeAudit,
   defaultDb,
   findExistingVote,
+  isOwnVehicle,
   normalizeDb,
   normalizeVote,
   publicVote,
@@ -133,6 +134,19 @@ describe('findExistingVote (anti-cheat dedup rule)', () => {
   it('returns undefined when nothing matches', () => {
     expect(findExistingVote(votes, 'C', 'd1', 'Alice')).toBeUndefined();
     expect(findExistingVote(votes, 'A', 'unknown', '')).toBeUndefined();
+  });
+});
+
+describe('isOwnVehicle', () => {
+  it('matches owner pseudo case- and whitespace-insensitively', () => {
+    expect(isOwnVehicle({ ownerName: 'Sandro_Vega' }, 'sandro_vega')).toBe(true);
+    expect(isOwnVehicle({ ownerName: '  Sandro ' }, ' SANDRO ')).toBe(true);
+  });
+
+  it('returns false on empty inputs or different pseudo', () => {
+    expect(isOwnVehicle(null, 'X')).toBe(false);
+    expect(isOwnVehicle({ ownerName: 'X' }, '')).toBe(false);
+    expect(isOwnVehicle({ ownerName: 'X' }, 'Y')).toBe(false);
   });
 });
 

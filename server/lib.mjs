@@ -97,6 +97,18 @@ export function publicVote(vote) {
   return rest;
 }
 
+// Vrai si le pseudo correspond au propriétaire du véhicule. Comparaison
+// normalisée (trim + lowercase) pour attraper "Sandro_Vega" vs "sandro_vega".
+// Empêche l'auto-vote (cas honnête : un participant qui clique par erreur
+// sur son propre véhicule). Ça ne couvre pas la triche volontaire avec un
+// pseudo différent, mais ça suffit pour la majorité des cas et l'audit
+// signale déjà les pseudos réutilisés sur plusieurs appareils.
+export function isOwnVehicle(vehicle, voterPseudo) {
+  if (!vehicle || !voterPseudo) return false;
+  return String(vehicle.ownerName || '').trim().toLowerCase() ===
+    String(voterPseudo).trim().toLowerCase();
+}
+
 // Trouve un vote existant pour ce véhicule par voterId si fourni, sinon par
 // pseudo (case-insensitive). C'est la règle anti-triche cœur : un appareil =
 // une voix par véhicule, mais on conserve un fallback pseudo pour les votes

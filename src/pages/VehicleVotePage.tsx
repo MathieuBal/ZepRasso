@@ -4,7 +4,7 @@ import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import VoteForm from '../components/VoteForm';
 import { getStoredPseudo } from '../lib/localSession';
 import { getConfiguredEventId, getEvent, getVehicles, getVotes, upsertVote } from '../lib/repository';
-import { findUserVote } from '../lib/scoring';
+import { findUserVote, isOwnVehicle } from '../lib/scoring';
 import type { Vehicle, Vote } from '../types';
 
 export default function VehicleVotePage() {
@@ -60,6 +60,7 @@ export default function VehicleVotePage() {
 
   if (loading) return <p className="notice">Chargement du véhicule...</p>;
   if (!vehicle) return <p className="error">Véhicule introuvable.</p>;
+  const isOwn = isOwnVehicle(vehicle, pseudo);
 
   return (
     <section className="grid" style={{ gap: 18 }}>
@@ -115,15 +116,27 @@ export default function VehicleVotePage() {
       </div>
 
       <div className="panel grid">
-        <span className={vote ? 'badge ok' : 'badge wait'}>
-          {vote ? '✓ Vote déjà enregistré · tu peux le modifier' : 'Note ce véhicule sur 5 critères'}
-        </span>
-        <h2>{vote ? 'Modifier mon vote' : 'Mon vote'}</h2>
-        {votesClosed && <p className="notice">Les votes sont fermés. Tu peux consulter le <Link to="/results">classement final</Link>.</p>}
-        {vehicle.isDisqualified && <p className="error">Ce véhicule est disqualifié, le vote est désactivé.</p>}
-        {error && <p className="error">{error}</p>}
-        {saved && <p className="success">Vote enregistré, retour à la liste…</p>}
-        <VoteForm initialVote={vote} disabled={vehicle.isDisqualified || votesClosed} onSubmit={handleSubmit} />
+        {isOwn ? (
+          <>
+            <span className="badge wait">Ton véhicule</span>
+            <h2>Pas d'auto-vote</h2>
+            <p className="notice">
+              C'est ton véhicule, tu ne peux pas voter pour toi-même. Va noter les autres bolides dans la <Link to="/vehicles">liste</Link>.
+            </p>
+          </>
+        ) : (
+          <>
+            <span className={vote ? 'badge ok' : 'badge wait'}>
+              {vote ? '✓ Vote déjà enregistré · tu peux le modifier' : 'Note ce véhicule sur 5 critères'}
+            </span>
+            <h2>{vote ? 'Modifier mon vote' : 'Mon vote'}</h2>
+            {votesClosed && <p className="notice">Les votes sont fermés. Tu peux consulter le <Link to="/results">classement final</Link>.</p>}
+            {vehicle.isDisqualified && <p className="error">Ce véhicule est disqualifié, le vote est désactivé.</p>}
+            {error && <p className="error">{error}</p>}
+            {saved && <p className="success">Vote enregistré, retour à la liste…</p>}
+            <VoteForm initialVote={vote} disabled={vehicle.isDisqualified || votesClosed} onSubmit={handleSubmit} />
+          </>
+        )}
       </div>
     </section>
   );
