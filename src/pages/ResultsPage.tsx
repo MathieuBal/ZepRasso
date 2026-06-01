@@ -4,6 +4,7 @@ import ResultsTable from '../components/ResultsTable';
 import { getEvent, getPrize, getVehicles, getVotes } from '../lib/repository';
 import type { PrizeSummary } from '../lib/repository';
 import { calculateVehicleScores } from '../lib/scoring';
+import { formatMoney } from '../lib/money';
 import { usePolling } from '../lib/usePolling';
 import type { VehicleScore } from '../types';
 
@@ -65,10 +66,10 @@ export default function ResultsPage() {
         <div className="panel" style={{ display: 'grid', gap: 6 }}>
           <p className="section-eyebrow">Cagnotte en jeu</p>
           <p style={{ margin: 0, fontWeight: 600 }}>
-            {prize.pool} € en jeu · 🥇 {prize.podium.first} € · 🥈 {prize.podium.second} € · 🥉 {prize.podium.third} €
+            {formatMoney(prize.pool)} en jeu · 🥇 {formatMoney(prize.podium.first)} · 🥈 {formatMoney(prize.podium.second)} · 🥉 {formatMoney(prize.podium.third)}
           </p>
           <p className="muted" style={{ margin: 0, fontSize: '0.8rem' }}>
-            {prize.paidCount} inscription{prize.paidCount > 1 ? 's' : ''} payée{prize.paidCount > 1 ? 's' : ''} × {prize.entryFee} € (part organisation : {prize.orgaCut} €).
+            {prize.paidCount} inscription{prize.paidCount > 1 ? 's' : ''} payée{prize.paidCount > 1 ? 's' : ''} × {formatMoney(prize.entryFee)} (part organisation : {formatMoney(prize.orgaCut)}).
           </p>
         </div>
       )}

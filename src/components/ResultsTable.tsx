@@ -1,3 +1,4 @@
+import { formatMoney } from '../lib/money';
 import type { PrizePool, VehicleScore } from '../types';
 
 type ResultsTableProps = {
@@ -15,7 +16,7 @@ const rawNote = (score: VehicleScore) =>
 function prizeFor(rank: number, prize?: PrizePool): string | null {
   if (!prize || prize.net <= 0) return null;
   const amount = rank === 1 ? prize.podium.first : rank === 2 ? prize.podium.second : rank === 3 ? prize.podium.third : 0;
-  return amount > 0 ? `${amount} €` : null;
+  return amount > 0 ? formatMoney(amount) : null;
 }
 
 export default function ResultsTable({ scores, prize }: ResultsTableProps) {

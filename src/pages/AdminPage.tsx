@@ -24,6 +24,7 @@ import {
 } from '../lib/repository';
 import { calculateVehicleScores } from '../lib/scoring';
 import { computePrizePool } from '../lib/prizePool';
+import { formatMoney } from '../lib/money';
 import type { AuditReport, EventStatus, Participant, PaymentMethod, RassoEvent, Vehicle, Vote } from '../types';
 
 const STATUS_LABEL: Record<EventStatus, string> = {
@@ -388,8 +389,8 @@ export default function AdminPage() {
         <hr className="divider" />
         <form className="form" onSubmit={handleSaveEntryFee}>
           <label className="field">
-            <span className="label">Prix d'inscription (€)</span>
-            <input className="input" type="number" min="0" step="1" value={entryFeeInput} onChange={(e) => setEntryFeeInput(e.target.value)} placeholder="Ex : 10" />
+            <span className="label">Prix d'inscription ($)</span>
+            <input className="input" type="number" min="0" step="1000" value={entryFeeInput} onChange={(e) => setEntryFeeInput(e.target.value)} placeholder="Ex : 100000" />
           </label>
           <div className="actions">
             <button className="button" type="submit">Enregistrer le tarif</button>
@@ -455,12 +456,12 @@ export default function AdminPage() {
         <div className="actions">
           <span className="badge wait">{participants.length} inscrit{participants.length > 1 ? 's' : ''}</span>
           <span className="badge ok">{paidCount} payé{paidCount > 1 ? 's' : ''}</span>
-          <span className="badge ok">Cagnotte : {prize.pool} €</span>
-          <span className="badge wait">Part orga (10 %) : {prize.orgaCut} €</span>
+          <span className="badge ok">Cagnotte : {formatMoney(prize.pool)}</span>
+          <span className="badge wait">Part orga (10 %) : {formatMoney(prize.orgaCut)}</span>
         </div>
         <p className="muted" style={{ marginTop: -4 }}>
-          Répartition du net ({prize.net} €) sur le podium :
-          {' '}🥇 {prize.podium.first} € · 🥈 {prize.podium.second} € · 🥉 {prize.podium.third} €.
+          Répartition du net ({formatMoney(prize.net)}) sur le podium :
+          {' '}🥇 {formatMoney(prize.podium.first)} · 🥈 {formatMoney(prize.podium.second)} · 🥉 {formatMoney(prize.podium.third)}.
           {scores.length > 0 && (
             <>
               {' '}Actuellement :
