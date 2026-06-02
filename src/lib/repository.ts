@@ -1,5 +1,5 @@
 import { getAdminCode, getVoterId } from './localSession';
-import type { AuditReport, Lottery, LotteryEntry, LotteryStats, Participant, PaymentMethod, PrizePool, Race, RaceDetails, RacePilot, RassoEvent, Vehicle, Vote, VoteInput } from '../types';
+import type { AuditReport, Lottery, LotteryEntry, LotteryStats, Participant, PaymentMethod, PrizePool, Race, RaceBet, RaceBetPayouts, RaceDetails, RacePilot, RassoEvent, Vehicle, Vote, VoteInput } from '../types';
 
 export const EVENT_ID = 'rasso';
 
@@ -231,7 +231,7 @@ export function createRace(input: RaceCreate): Promise<Race> {
   return api<Race>('/races', { method: 'POST', headers: adminHeaders(), body: JSON.stringify(input) });
 }
 
-export function updateRace(id: string, patch: Partial<RaceCreate> & { status?: Race['status'] }): Promise<Race> {
+export function updateRace(id: string, patch: Partial<RaceCreate> & { status?: Race['status']; bettingStatus?: Race['bettingStatus']; betOrgaCutPercent?: number }): Promise<Race> {
   return api<Race>(`/races/${id}`, { method: 'PATCH', headers: adminHeaders(), body: JSON.stringify(patch) });
 }
 
@@ -269,6 +269,37 @@ export function updateRacePilot(id: string, patch: RacePilotPatch): Promise<Race
 
 export async function deleteRacePilot(id: string): Promise<void> {
   await api(`/race-pilots/${id}`, { method: 'DELETE', headers: adminHeaders() });
+}
+
+export function getRaceBets(raceId: string): Promise<RaceBet[]> {
+  return api<RaceBet[]>(`/races/${raceId}/bets`, { headers: adminHeaders() });
+}
+
+export type RaceBetInput = {
+  bettorPseudo: string;
+  pilotId: string;
+  amount: number;
+  hasPaid?: boolean;
+  paymentMethod?: PaymentMethod;
+  note?: string;
+};
+
+export function addRaceBet(raceId: string, input: RaceBetInput): Promise<RaceBet> {
+  return api<RaceBet>(`/races/${raceId}/bets`, { method: 'POST', headers: adminHeaders(), body: JSON.stringify(input) });
+}
+
+export type RaceBetPatch = Partial<Omit<RaceBetInput, 'paymentMethod'>> & { paymentMethod?: PaymentMethod | null };
+
+export function updateRaceBet(betId: string, patch: RaceBetPatch): Promise<RaceBet> {
+  return api<RaceBet>(`/race-bets/${betId}`, { method: 'PATCH', headers: adminHeaders(), body: JSON.stringify(patch) });
+}
+
+export async function deleteRaceBet(betId: string): Promise<void> {
+  await api(`/race-bets/${betId}`, { method: 'DELETE', headers: adminHeaders() });
+}
+
+export function declareRaceWinner(raceId: string, pilotId: string | null): Promise<{ race: Race; betPayouts: RaceBetPayouts }> {
+  return api(`/races/${raceId}/winner`, { method: 'POST', headers: adminHeaders(), body: JSON.stringify({ pilotId }) });
 }
 
 // Téléchargement direct (admin-headers) du CSV billes.

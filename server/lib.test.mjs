@@ -3,6 +3,7 @@ import {
   bestTime,
   clamp,
   computeAudit,
+  computeBetPayouts,
   computePrizePool,
   computeRaceStandings,
   defaultDb,
@@ -12,6 +13,7 @@ import {
   normalizeDb,
   normalizeParticipant,
   normalizeRace,
+  normalizeRaceBet,
   normalizeRacePilot,
   normalizeVote,
   ownsVehicleByDevice,
@@ -378,5 +380,67 @@ describe('computePrizePool with custom orga %', () => {
     expect(r.orgaCut).toBe(80_000);
     expect(r.net).toBe(320_000);
     expect(r.podium.first + r.podium.second + r.podium.third).toBe(r.net);
+  });
+});
+
+describe('normalizeRaceBet', () => {
+  it('rejects bets without raceId/pseudo/pilotId/amount > 0', () => {
+    expect(normalizeRaceBet({}, NOW)).toBeNull();
+    expect(normalizeRaceBet({ raceId: 'r', bettorPseudo: 'X', pilotId: 'p', amount: 0 }, NOW)).toBeNull();
+  });
+  it('trims, coerces and ignores unknown payment method', () => {
+    const b = normalizeRaceBet({ raceId: 'r', bettorPseudo: '  Alice  ', pilotId: 'p1', amount: '12000', hasPaid: true, paymentMethod: 'crypto' }, NOW);
+    expect(b).toMatchObject({ raceId: 'r', bettorPseudo: 'Alice', pilotId: 'p1', amount: 12000, hasPaid: true });
+    expect(b.paymentMethod).toBeUndefined();
+  });
+});
+
+describe('computeBetPayouts (pari mutuel)', () => {
+  // Référence : 3 mises payées (30k sur A, 50k sur A, 20k sur B). Pool = 100k.
+  // 20 % orga = 20k. Net = 80k partagé entre A1 et A2 au prorata 30/80 et 50/80.
+  const bets = () => ([
+    { id: 'b1', raceId: 'r', bettorPseudo: 'P1', pilotId: 'A', amount: 30000, hasPaid: true },
+    { id: 'b2', raceId: 'r', bettorPseudo: 'P2', pilotId: 'A', amount: 50000, hasPaid: true },
+    { id: 'b3', raceId: 'r', bettorPseudo: 'P3', pilotId: 'B', amount: 20000, hasPaid: true },
+    { id: 'b4', raceId: 'r', bettorPseudo: 'P4', pilotId: 'A', amount: 99999999, hasPaid: false }, // non payé : ignoré
+  ]);
+
+  it('computes the pool from paid bets only and applies the orga cut', () => {
+    const r = computeBetPayouts(bets(), 'A', 20);
+    expect(r.pool).toBe(100000);
+    expect(r.orgaCut).toBe(20000);
+    expect(r.net).toBe(80000);
+  });
+
+  it('distributes the net proportionally to winning bets and the last winner absorbs rounding', () => {
+    const r = computeBetPayouts(bets(), 'A', 20);
+    expect(r.winners).toHaveLength(2);
+    // Somme exacte = net (invariant).
+    const totalPayout = r.winners.reduce((s, w) => s + w.payout, 0);
+    expect(totalPayout).toBe(r.net);
+    // Profit = payout - mise.
+    for (const w of r.winners) {
+      expect(w.profit).toBe(w.payout - w.bet);
+    }
+    // P1 récupère ~30/80 = 37.5% du net (30k), P2 ~62.5% (50k).
+    const p1 = r.winners.find((w) => w.bettorPseudo === 'P1');
+    const p2 = r.winners.find((w) => w.bettorPseudo === 'P2');
+    expect(p1.payout).toBe(30000);
+    expect(p2.payout).toBe(50000);
+  });
+
+  it('gives everything to the orga when nobody bet on the winner', () => {
+    const r = computeBetPayouts(bets(), 'C', 20); // C n'a aucune mise payée
+    expect(r.orgaCut).toBe(r.pool);
+    expect(r.net).toBe(0);
+    expect(r.winners).toHaveLength(0);
+    expect(r.orgaTakesAll).toBe(true);
+  });
+
+  it('returns the pool only when no winner is set yet', () => {
+    const r = computeBetPayouts(bets(), undefined, 20);
+    expect(r.pool).toBe(100000);
+    expect(r.winners).toEqual([]);
+    expect(r.orgaTakesAll).toBe(false);
   });
 });

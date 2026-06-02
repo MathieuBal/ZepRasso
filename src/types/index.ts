@@ -68,6 +68,7 @@ export type LotteryStats = {
 
 export type RaceStatus = 'draft' | 'open' | 'running' | 'finished';
 export type RaceSequenceMode = 'sequential' | 'alternating';
+export type RaceBettingStatus = 'closed' | 'open' | 'locked';
 
 export type Race = {
   id: string;
@@ -77,8 +78,41 @@ export type Race = {
   rounds: number;
   sequenceMode: RaceSequenceMode;
   orgaCutPercent: number;
+  betOrgaCutPercent: number;
   status: RaceStatus;
+  bettingStatus: RaceBettingStatus;
+  winnerPilotId?: string;
   createdAt: string;
+};
+
+export type RaceBet = {
+  id: string;
+  raceId: string;
+  bettorPseudo: string;
+  voterId?: string;
+  pilotId: string;
+  amount: number;
+  hasPaid: boolean;
+  paymentMethod?: PaymentMethod;
+  note?: string;
+  createdAt: string;
+};
+
+export type RaceBetPayout = {
+  betId: string;
+  bettorPseudo: string;
+  pilotId: string;
+  bet: number;
+  payout: number;
+  profit: number;
+};
+
+export type RaceBetPayouts = {
+  pool: number;
+  orgaCut: number;
+  net: number;
+  winners: RaceBetPayout[];
+  orgaTakesAll: boolean;
 };
 
 export type RacePilot = {
@@ -93,10 +127,13 @@ export type RacePilot = {
   createdAt: string;
 };
 
-// Pilote enrichi côté serveur dans la réponse /pilots (meilleur temps + rang).
+// Pilote enrichi côté serveur dans la réponse /pilots (meilleur temps + rang
+// + total parié sur lui parmi les paris payés).
 export type RacePilotWithMeta = RacePilot & {
   bestTime: number | null;
   rank: number | null;
+  paidStake: number;
+  bettors: number;
 };
 
 export type RaceDetails = {
@@ -105,6 +142,7 @@ export type RaceDetails = {
   prize: PrizePool;
   paidCount: number;
   totalPilots: number;
+  betPayouts: RaceBetPayouts;
 };
 
 export type Vehicle = {

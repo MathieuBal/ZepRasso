@@ -26,6 +26,7 @@ export function defaultDb(now = new Date().toISOString()) {
     lotteryEntries: [],
     races: [],
     racePilots: [],
+    raceBets: [],
   };
 }
 
@@ -210,6 +211,13 @@ export function normalizeDb(parsed, now = new Date().toISOString()) {
     ? parsed.racePilots
         .map((raw) => normalizeRacePilot(raw, now)).filter((p) => p && raceIds.has(p.raceId))
     : [];
+  const pilotIds = new Set(racePilots.map((p) => p.id));
+  // Paris orphelins (course OU pilote supprimé) écartés.
+  const raceBets = Array.isArray(parsed?.raceBets)
+    ? parsed.raceBets
+        .map((raw) => normalizeRaceBet(raw, now))
+        .filter((b) => b && raceIds.has(b.raceId) && pilotIds.has(b.pilotId))
+    : [];
   // Migration de statut : l'ancien 'open' (votes ouverts) devient 'voting'.
   // Tout statut inconnu retombe sur 'draft' (état le plus sûr : ni vote ni
   // inscription).
@@ -233,6 +241,7 @@ export function normalizeDb(parsed, now = new Date().toISOString()) {
     lotteryEntries,
     races,
     racePilots,
+    raceBets,
   };
 }
 
@@ -386,9 +395,15 @@ export function normalizeRace(raw, now = new Date().toISOString()) {
   if (!name) return null;
   const entryFee = Math.max(0, Math.floor(Number(raw.entryFee) || 0));
   const rounds = Math.min(10, Math.max(1, Math.floor(Number(raw.rounds) || 3)));
-  const orgaCutPercent = Math.min(50, Math.max(0, Number(raw.orgaCutPercent) ?? 10));
+  // Number(undefined) === NaN et NaN ?? 10 === NaN, donc on bascule sur le
+  // défaut explicitement quand la valeur n'est pas un nombre fini.
+  const rawOrga = Number(raw.orgaCutPercent);
+  const orgaCutPercent = Math.min(50, Math.max(0, Number.isFinite(rawOrga) ? rawOrga : 10));
+  const rawBetOrga = Number(raw.betOrgaCutPercent);
+  const betOrgaCutPercent = Math.min(50, Math.max(0, Number.isFinite(rawBetOrga) ? rawBetOrga : 20));
   const sequenceMode = raw.sequenceMode === 'alternating' ? 'alternating' : 'sequential';
   const status = ['draft', 'open', 'running', 'finished'].includes(raw.status) ? raw.status : 'open';
+  const bettingStatus = ['closed', 'open', 'locked'].includes(raw.bettingStatus) ? raw.bettingStatus : 'closed';
   return {
     id: String(raw.id || randomUUID()),
     name,
@@ -397,7 +412,10 @@ export function normalizeRace(raw, now = new Date().toISOString()) {
     rounds,
     sequenceMode,
     orgaCutPercent,
+    betOrgaCutPercent,
     status,
+    bettingStatus,
+    winnerPilotId: raw.winnerPilotId ? String(raw.winnerPilotId) : undefined,
     createdAt: String(raw.createdAt || now),
   };
 }
@@ -447,4 +465,88 @@ export function computeRaceStandings(pilots) {
     if (tb === null) return -1;
     return ta - tb;
   });
+}
+
+// ─── Paris mutuels sur les courses ──────────────────────────────────────────
+// Style PMU : seuls les paris PAYÉS rentrent dans le pot. À la déclaration du
+// vainqueur, l'orga prend betOrgaCutPercent (défaut 20). Le net est redistribué
+// entre les parieurs gagnants au prorata de leur mise. Si aucun pari payé sur
+// le vainqueur, tout le pot va à l'orga.
+
+export function normalizeRaceBet(raw, now = new Date().toISOString()) {
+  if (!raw || typeof raw !== 'object') return null;
+  const raceId = String(raw.raceId || '');
+  const bettorPseudo = String(raw.bettorPseudo || '').trim();
+  const pilotId = String(raw.pilotId || '');
+  const amount = Math.floor(Number(raw.amount) || 0);
+  if (!raceId || !bettorPseudo || !pilotId || amount <= 0) return null;
+  const method = raw.paymentMethod;
+  return {
+    id: String(raw.id || randomUUID()),
+    raceId,
+    bettorPseudo,
+    voterId: raw.voterId ? String(raw.voterId) : undefined,
+    pilotId,
+    amount,
+    hasPaid: Boolean(raw.hasPaid),
+    paymentMethod: (method === 'cash' || method === 'virement') ? method : undefined,
+    note: raw.note ? String(raw.note).trim() : undefined,
+    createdAt: String(raw.createdAt || now),
+  };
+}
+
+// Pour chaque pilote : total parié (toutes mises payées confondues) et nombre
+// de parieurs distincts. Utile à l'affichage admin avant tirage du vainqueur.
+export function computeBetTotalsByPilot(bets) {
+  const map = new Map();
+  for (const b of bets) {
+    if (!b.hasPaid) continue;
+    if (!map.has(b.pilotId)) map.set(b.pilotId, { totalAmount: 0, bettors: 0 });
+    const entry = map.get(b.pilotId);
+    entry.totalAmount += b.amount;
+    entry.bettors += 1;
+  }
+  return map;
+}
+
+// Calcule la répartition des paris d'une course. winnerPilotId peut être null
+// (course pas encore tranchée) : on renvoie alors juste le pool.
+// L'arrondi est absorbé par le dernier gagnant pour que la somme tombe juste.
+export function computeBetPayouts(bets, winnerPilotId, orgaPercent = 20) {
+  const paid = bets.filter((b) => b.hasPaid);
+  const pool = paid.reduce((s, b) => s + b.amount, 0);
+  const pct = Math.min(100, Math.max(0, Number(orgaPercent) || 0));
+  const orgaCut = Math.round(pool * (pct / 100));
+  const net = pool - orgaCut;
+  if (!winnerPilotId) {
+    return { pool, orgaCut, net, winners: [], orgaTakesAll: false };
+  }
+  const winningBets = paid.filter((b) => b.pilotId === winnerPilotId);
+  const winningStake = winningBets.reduce((s, b) => s + b.amount, 0);
+  // Cas particulier : personne n'a misé sur le vainqueur → tout va à l'orga.
+  if (winningStake === 0) {
+    return { pool, orgaCut: pool, net: 0, winners: [], orgaTakesAll: true };
+  }
+  // Distribution proportionnelle, dernier gagnant absorbe le reste.
+  const winners = winningBets.map((b) => ({
+    betId: b.id,
+    bettorPseudo: b.bettorPseudo,
+    pilotId: b.pilotId,
+    bet: b.amount,
+    payout: 0,
+    profit: 0,
+  }));
+  let distributed = 0;
+  for (let i = 0; i < winners.length - 1; i++) {
+    const share = Math.round(net * (winningBets[i].amount / winningStake));
+    winners[i].payout = share;
+    distributed += share;
+  }
+  if (winners.length > 0) {
+    winners[winners.length - 1].payout = net - distributed;
+  }
+  for (let i = 0; i < winners.length; i++) {
+    winners[i].profit = winners[i].payout - winningBets[i].amount;
+  }
+  return { pool, orgaCut, net, winners, orgaTakesAll: false };
 }

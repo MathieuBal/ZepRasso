@@ -8,6 +8,8 @@ import {
   computeAudit,
   defaultDb,
   bestTime,
+  computeBetPayouts,
+  computeBetTotalsByPilot,
   computeLotteryStats,
   computePrizePool,
   computeRaceStandings,
@@ -18,6 +20,7 @@ import {
   normalizeLotteryEntry,
   normalizeParticipant,
   normalizeRace,
+  normalizeRaceBet,
   normalizeRacePilot,
   normalizeVote,
   ownsVehicleByDevice,
@@ -800,8 +803,10 @@ app.patch('/api/races/:id', requireAdmin, (req, res) => {
   if (typeof body.entryFee === 'number' && body.entryFee >= 0) race.entryFee = Math.floor(body.entryFee);
   if (typeof body.rounds === 'number' && body.rounds >= 1) race.rounds = Math.min(10, Math.floor(body.rounds));
   if (typeof body.orgaCutPercent === 'number' && body.orgaCutPercent >= 0 && body.orgaCutPercent <= 50) race.orgaCutPercent = body.orgaCutPercent;
+  if (typeof body.betOrgaCutPercent === 'number' && body.betOrgaCutPercent >= 0 && body.betOrgaCutPercent <= 50) race.betOrgaCutPercent = body.betOrgaCutPercent;
   if (body.sequenceMode === 'sequential' || body.sequenceMode === 'alternating') race.sequenceMode = body.sequenceMode;
   if (['draft', 'open', 'running', 'finished'].includes(body.status)) race.status = body.status;
+  if (['closed', 'open', 'locked'].includes(body.bettingStatus)) race.bettingStatus = body.bettingStatus;
   saveDb();
   res.json(race);
 });
@@ -824,9 +829,15 @@ app.get('/api/races/:id/pilots', requireAdmin, (req, res) => {
   const standings = computeRaceStandings(pilots);
   const paidCount = pilots.filter((p) => p.hasPaid).length;
   const prize = computePrizePool(paidCount, race.entryFee, race.orgaCutPercent);
-  // Réponse enrichie : pour chaque pilote, son meilleur temps et son rang.
-  const withMeta = standings.map((p, i) => ({ ...p, bestTime: bestTime(p), rank: bestTime(p) === null ? null : i + 1 }));
-  res.json({ race, pilots: withMeta, prize, paidCount, totalPilots: pilots.length });
+  // Pour chaque pilote : meilleur temps, rang, total parié (mises payées).
+  const bets = db.raceBets.filter((b) => b.raceId === race.id);
+  const totalsByPilot = computeBetTotalsByPilot(bets);
+  const withMeta = standings.map((p, i) => {
+    const t = totalsByPilot.get(p.id) || { totalAmount: 0, bettors: 0 };
+    return { ...p, bestTime: bestTime(p), rank: bestTime(p) === null ? null : i + 1, paidStake: t.totalAmount, bettors: t.bettors };
+  });
+  const betPayouts = computeBetPayouts(bets, race.winnerPilotId, race.betOrgaCutPercent);
+  res.json({ race, pilots: withMeta, prize, paidCount, totalPilots: pilots.length, betPayouts });
 });
 
 app.post('/api/races/:id/pilots', requireAdmin, (req, res) => {
@@ -886,6 +897,88 @@ app.delete('/api/race-pilots/:id', requireAdmin, (req, res) => {
   db.racePilots.splice(idx, 1);
   saveDb();
   res.json({ ok: true });
+});
+
+// ─── Paris sur les courses ──────────────────────────────────────────────────
+// Seuls les paris PAYÉS rentrent dans le pot. Le vainqueur d'un pari est
+// défini par la déclaration du vainqueur de la course (POST .../winner).
+
+app.get('/api/races/:id/bets', requireAdmin, (req, res) => {
+  const race = db.races.find((r) => r.id === req.params.id);
+  if (!race) { res.status(404).json({ error: 'Course introuvable.' }); return; }
+  const bets = db.raceBets.filter((b) => b.raceId === race.id)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  res.json(bets);
+});
+
+app.post('/api/races/:id/bets', requireAdmin, (req, res) => {
+  // Admin-side bet entry (V1) : l'orga rentre les paris à mesure que les gens
+  // viennent miser. Plus tard on pourra ajouter une route publique gated par
+  // race.bettingStatus === 'open'.
+  const race = db.races.find((r) => r.id === req.params.id);
+  if (!race) { res.status(404).json({ error: 'Course introuvable.' }); return; }
+  if (race.status === 'finished') { res.status(403).json({ error: 'La course est terminée, plus de paris possibles.' }); return; }
+  const body = req.body || {};
+  const pilot = db.racePilots.find((p) => p.id === String(body.pilotId || '') && p.raceId === race.id);
+  if (!pilot) { res.status(400).json({ error: 'Pilote introuvable pour cette course.' }); return; }
+  const bet = normalizeRaceBet({
+    raceId: race.id,
+    bettorPseudo: body.bettorPseudo,
+    pilotId: pilot.id,
+    amount: body.amount,
+    hasPaid: body.hasPaid,
+    paymentMethod: body.paymentMethod,
+    note: body.note,
+  });
+  if (!bet) { res.status(400).json({ error: 'Pseudo du parieur, pilote et mise > 0 obligatoires.' }); return; }
+  db.raceBets.push(bet);
+  saveDb();
+  res.json(bet);
+});
+
+app.patch('/api/race-bets/:id', requireAdmin, (req, res) => {
+  const bet = db.raceBets.find((b) => b.id === req.params.id);
+  if (!bet) { res.status(404).json({ error: 'Pari introuvable.' }); return; }
+  const body = req.body || {};
+  if (typeof body.bettorPseudo === 'string' && body.bettorPseudo.trim()) bet.bettorPseudo = body.bettorPseudo.trim();
+  if (typeof body.amount === 'number' && body.amount > 0) bet.amount = Math.floor(body.amount);
+  if (typeof body.pilotId === 'string') {
+    const p = db.racePilots.find((rp) => rp.id === body.pilotId && rp.raceId === bet.raceId);
+    if (p) bet.pilotId = p.id;
+  }
+  if (typeof body.hasPaid === 'boolean') bet.hasPaid = body.hasPaid;
+  if (body.paymentMethod === 'cash' || body.paymentMethod === 'virement') bet.paymentMethod = body.paymentMethod;
+  else if (body.paymentMethod === null || body.paymentMethod === '') bet.paymentMethod = undefined;
+  if (typeof body.note === 'string') bet.note = body.note.trim() || undefined;
+  saveDb();
+  res.json(bet);
+});
+
+app.delete('/api/race-bets/:id', requireAdmin, (req, res) => {
+  const idx = db.raceBets.findIndex((b) => b.id === req.params.id);
+  if (idx === -1) { res.status(404).json({ error: 'Pari introuvable.' }); return; }
+  db.raceBets.splice(idx, 1);
+  saveDb();
+  res.json({ ok: true });
+});
+
+// Déclaration du vainqueur : verrouille les paris (bettingStatus='locked'),
+// passe la course à 'finished' et permet le calcul définitif des gains.
+app.post('/api/races/:id/winner', requireAdmin, (req, res) => {
+  const race = db.races.find((r) => r.id === req.params.id);
+  if (!race) { res.status(404).json({ error: 'Course introuvable.' }); return; }
+  const winnerPilotId = String((req.body || {}).pilotId || '').trim() || undefined;
+  if (winnerPilotId) {
+    const pilot = db.racePilots.find((p) => p.id === winnerPilotId && p.raceId === race.id);
+    if (!pilot) { res.status(400).json({ error: 'Pilote introuvable.' }); return; }
+  }
+  backupDb('avant-declaration-vainqueur-course');
+  race.winnerPilotId = winnerPilotId;
+  race.status = 'finished';
+  race.bettingStatus = 'locked';
+  saveDb();
+  const bets = db.raceBets.filter((b) => b.raceId === race.id);
+  res.json({ race, betPayouts: computeBetPayouts(bets, winnerPilotId, race.betOrgaCutPercent) });
 });
 
 app.get('/api/admin/audit', requireAdmin, (_req, res) => {

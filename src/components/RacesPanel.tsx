@@ -1,18 +1,23 @@
 import { Plus, Trash2, UserPlus } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import {
+  addRaceBet,
   addRacePilot,
   createRace,
+  declareRaceWinner,
   deleteRace,
+  deleteRaceBet,
   deleteRacePilot,
+  getRaceBets,
   getRaceDetails,
   getRaces,
   updateRace,
+  updateRaceBet,
   updateRacePilot,
 } from '../lib/repository';
 import { formatGap, formatMs, parseTimeStr } from '../lib/time';
 import { formatMoney } from '../lib/money';
-import type { PaymentMethod, Race, RaceDetails, RacePilotWithMeta } from '../types';
+import type { PaymentMethod, Race, RaceBet, RaceDetails, RacePilotWithMeta } from '../types';
 
 const blankRace = {
   name: '',
@@ -26,6 +31,14 @@ const blankRace = {
 const blankPilot = {
   pseudo: '',
   vehicle: '',
+  hasPaid: false,
+  paymentMethod: '' as '' | PaymentMethod,
+};
+
+const blankBet = {
+  bettorPseudo: '',
+  pilotId: '',
+  amount: 50000,
   hasPaid: false,
   paymentMethod: '' as '' | PaymentMethod,
 };
@@ -67,20 +80,23 @@ export default function RacesPanel({ onMessage, onError }: Props) {
   const [details, setDetails] = useState<RaceDetails | null>(null);
   const [newRace, setNewRace] = useState(blankRace);
   const [newPilot, setNewPilot] = useState(blankPilot);
+  const [bets, setBets] = useState<RaceBet[]>([]);
+  const [newBet, setNewBet] = useState(blankBet);
 
   const refreshList = useCallback(async () => {
     try { setRaces(await getRaces()); } catch (err) { onError((err as Error).message); }
   }, [onError]);
   const refreshDetails = useCallback(async (id: string) => {
     try {
-      const d = await getRaceDetails(id);
+      const [d, b] = await Promise.all([getRaceDetails(id), getRaceBets(id)]);
       setDetails(d);
+      setBets(b);
       setRaces((prev) => prev.map((r) => r.id === d.race.id ? d.race : r));
     } catch (err) { onError((err as Error).message); }
   }, [onError]);
 
   useEffect(() => { refreshList(); }, [refreshList]);
-  useEffect(() => { if (selectedId) refreshDetails(selectedId); else setDetails(null); }, [selectedId, refreshDetails]);
+  useEffect(() => { if (selectedId) refreshDetails(selectedId); else { setDetails(null); setBets([]); } }, [selectedId, refreshDetails]);
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -146,6 +162,50 @@ export default function RacesPanel({ onMessage, onError }: Props) {
 
   async function handleTimeChange(p: RacePilotWithMeta, roundIndex: number, ms: number | null) {
     try { await updateRacePilot(p.id, { roundIndex, timeMs: ms }); if (details) refreshDetails(details.race.id); }
+    catch (err) { onError((err as Error).message); }
+  }
+
+  async function handleAddBet(e: React.FormEvent) {
+    e.preventDefault();
+    if (!details) return;
+    if (!newBet.bettorPseudo.trim()) { onError('Pseudo du parieur requis.'); return; }
+    if (!newBet.pilotId) { onError('Choisis un pilote sur lequel parier.'); return; }
+    if (!(Number(newBet.amount) > 0)) { onError('La mise doit être positive.'); return; }
+    try {
+      await addRaceBet(details.race.id, {
+        bettorPseudo: newBet.bettorPseudo.trim(),
+        pilotId: newBet.pilotId,
+        amount: Number(newBet.amount),
+        hasPaid: newBet.hasPaid,
+        paymentMethod: newBet.paymentMethod || undefined,
+      });
+      setNewBet({ ...blankBet });
+      await refreshDetails(details.race.id);
+      onMessage('Pari enregistré.');
+    } catch (err) { onError((err as Error).message); }
+  }
+
+  async function handleToggleBetPaid(b: RaceBet) {
+    try { await updateRaceBet(b.id, { hasPaid: !b.hasPaid }); if (details) refreshDetails(details.race.id); }
+    catch (err) { onError((err as Error).message); }
+  }
+
+  async function handleBetMethod(b: RaceBet, method: PaymentMethod | '') {
+    try { await updateRaceBet(b.id, { paymentMethod: method || null }); if (details) refreshDetails(details.race.id); }
+    catch (err) { onError((err as Error).message); }
+  }
+
+  async function handleDeleteBet(b: RaceBet) {
+    if (!confirm(`Supprimer le pari de ${b.bettorPseudo} (${formatMoney(b.amount)}) ?`)) return;
+    try { await deleteRaceBet(b.id); if (details) refreshDetails(details.race.id); onMessage('Pari supprimé.'); }
+    catch (err) { onError((err as Error).message); }
+  }
+
+  async function handleDeclareWinner(pilotId: string) {
+    if (!details) return;
+    const pilot = details.pilots.find((p) => p.id === pilotId);
+    if (!confirm(`Déclarer ${pilot?.pseudo} vainqueur ? Cela clôt la course, verrouille les paris et calcule les gains. Une sauvegarde est faite avant.`)) return;
+    try { await declareRaceWinner(details.race.id, pilotId); await refreshDetails(details.race.id); onMessage('Vainqueur déclaré, paris réglés.'); }
     catch (err) { onError((err as Error).message); }
   }
 
@@ -321,6 +381,143 @@ export default function RacesPanel({ onMessage, onError }: Props) {
                           </select>
                         </td>
                         <td><button className="button danger" onClick={() => handleDeletePilot(p)}><Trash2 size={14} /></button></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* ─── Paris mutuels ─── */}
+          <hr className="divider" />
+          <div className="between">
+            <div>
+              <p className="section-eyebrow">Paris mutuels</p>
+              <h3 style={{ margin: '4px 0' }}>Pot des paris</h3>
+              <p className="muted" style={{ margin: 0, fontSize: '0.85rem' }}>
+                Mises payées uniquement comptées. Part orga : <strong>{selected.betOrgaCutPercent}%</strong>. Net redistribué aux parieurs gagnants au prorata.
+              </p>
+            </div>
+            <div className="actions">
+              {selected.bettingStatus !== 'locked' && selected.status !== 'finished' && (
+                <button className="button" onClick={() => updateRace(selected.id, { bettingStatus: selected.bettingStatus === 'open' ? 'closed' : 'open' }).then(() => refreshDetails(selected.id))}>
+                  {selected.bettingStatus === 'open' ? 'Fermer les paris' : 'Ouvrir les paris'}
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Totaux par pilote */}
+          <div className="actions">
+            <span className="badge wait">Pot total : {formatMoney(details.betPayouts.pool)}</span>
+            <span className="badge wait">{bets.filter((b) => b.hasPaid).length} pari{bets.filter((b) => b.hasPaid).length > 1 ? 's' : ''} payé{bets.filter((b) => b.hasPaid).length > 1 ? 's' : ''} / {bets.length}</span>
+            <span className="badge ok">Part orga estimée : {formatMoney(details.betPayouts.orgaCut)}</span>
+            <span className="badge ok">Net à redistribuer : {formatMoney(details.betPayouts.net)}</span>
+          </div>
+
+          {/* Vue par pilote : qui a misé combien sur qui (+ bouton vainqueur si pas encore tranché) */}
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>Pilote</th><th>Total parié</th><th>Parieurs</th><th></th></tr></thead>
+              <tbody>
+                {details.pilots.map((p) => (
+                  <tr key={p.id} style={selected.winnerPilotId === p.id ? { background: 'rgba(255,215,0,0.10)' } : undefined}>
+                    <td><strong>{p.pseudo}</strong>{selected.winnerPilotId === p.id && ' 🏆'}</td>
+                    <td style={{ fontFamily: 'monospace' }}>{formatMoney(p.paidStake)}</td>
+                    <td>{p.bettors}</td>
+                    <td className="actions">
+                      {!selected.winnerPilotId && (
+                        <button className="button primary" onClick={() => handleDeclareWinner(p.id)}>Déclarer vainqueur</button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Gains réels après déclaration */}
+          {selected.winnerPilotId && (
+            details.betPayouts.winners.length > 0 ? (
+              <div className="grid" style={{ gap: 6 }}>
+                <p className="section-eyebrow">Gains à verser</p>
+                <div className="table-wrap">
+                  <table>
+                    <thead><tr><th>Parieur</th><th>Mise</th><th>À recevoir</th><th>Profit net</th></tr></thead>
+                    <tbody>
+                      {details.betPayouts.winners.map((w) => (
+                        <tr key={w.betId}>
+                          <td><strong>{w.bettorPseudo}</strong></td>
+                          <td style={{ fontFamily: 'monospace' }}>{formatMoney(w.bet)}</td>
+                          <td style={{ fontFamily: 'monospace', fontWeight: 600 }}>{formatMoney(w.payout)}</td>
+                          <td style={{ fontFamily: 'monospace', color: w.profit >= 0 ? 'var(--text)' : 'var(--text-3)' }}>
+                            {w.profit >= 0 ? '+' : ''}{formatMoney(w.profit)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="muted" style={{ fontSize: '0.85rem' }}>Total à verser : {formatMoney(details.betPayouts.net)}.</p>
+              </div>
+            ) : details.betPayouts.orgaTakesAll ? (
+              <p className="notice">Personne n'a misé sur le vainqueur : la totalité du pot ({formatMoney(details.betPayouts.pool)}) revient à l'organisation.</p>
+            ) : null
+          )}
+
+          {/* Ajout d'un pari */}
+          {selected.status !== 'finished' && details.pilots.length > 0 && (
+            <form className="form" onSubmit={handleAddBet}>
+              <p className="section-eyebrow" style={{ marginBottom: -6 }}>Enregistrer un pari</p>
+              <div className="actions" style={{ gap: 8 }}>
+                <input className="input" placeholder="Pseudo du parieur *" value={newBet.bettorPseudo} onChange={(e) => setNewBet({ ...newBet, bettorPseudo: e.target.value })} />
+                <select className="input" value={newBet.pilotId} onChange={(e) => setNewBet({ ...newBet, pilotId: e.target.value })}>
+                  <option value="">— Pilote —</option>
+                  {details.pilots.map((p) => <option key={p.id} value={p.id}>{p.pseudo}</option>)}
+                </select>
+                <input className="input" type="number" min="1" step="1000" value={newBet.amount} onChange={(e) => setNewBet({ ...newBet, amount: Number(e.target.value) })} placeholder="Mise ($)" style={{ maxWidth: 140 }} />
+                <select className="input" value={newBet.paymentMethod} onChange={(e) => setNewBet({ ...newBet, paymentMethod: e.target.value as '' | PaymentMethod })} style={{ maxWidth: 110 }}>
+                  <option value="">Moyen</option>
+                  <option value="cash">Cash</option>
+                  <option value="virement">Virement</option>
+                </select>
+                <label className="actions" style={{ gap: 4 }}>
+                  <input type="checkbox" checked={newBet.hasPaid} onChange={(e) => setNewBet({ ...newBet, hasPaid: e.target.checked })} /> Payé
+                </label>
+                <button className="button primary" type="submit">Ajouter</button>
+              </div>
+            </form>
+          )}
+
+          {/* Liste des paris */}
+          {bets.length === 0 ? (
+            <p className="muted">Aucun pari pour cette course.</p>
+          ) : (
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>Parieur</th><th>Pilote</th><th>Mise</th><th>Payé</th><th>Moyen</th><th></th></tr></thead>
+                <tbody>
+                  {bets.map((b) => {
+                    const pilot = details.pilots.find((p) => p.id === b.pilotId);
+                    return (
+                      <tr key={b.id}>
+                        <td><strong>{b.bettorPseudo}</strong></td>
+                        <td>{pilot ? pilot.pseudo : <span className="muted">—</span>}</td>
+                        <td style={{ fontFamily: 'monospace' }}>{formatMoney(b.amount)}</td>
+                        <td>
+                          <button className={b.hasPaid ? 'button ok' : 'button ghost'} onClick={() => handleToggleBetPaid(b)}>
+                            {b.hasPaid ? '✓ Payé' : 'Non'}
+                          </button>
+                        </td>
+                        <td>
+                          <select className="input" value={b.paymentMethod || ''} onChange={(e) => handleBetMethod(b, e.target.value as PaymentMethod | '')}>
+                            <option value="">—</option>
+                            <option value="cash">Cash</option>
+                            <option value="virement">Virement</option>
+                          </select>
+                        </td>
+                        <td><button className="button danger" onClick={() => handleDeleteBet(b)}><Trash2 size={14} /></button></td>
                       </tr>
                     );
                   })}
