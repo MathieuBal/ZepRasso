@@ -728,26 +728,26 @@ app.delete('/api/lottery-entries/:id', requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
-// CSV « une ligne par bille » à donner au jeu de course de billes.
-// Colonnes : marble_n, entry_number, first_name, last_name, phone
+// Fichier « une ligne par bille » pour le jeu de course de billes : une seule
+// colonne « Participant NN » (numéro à 2 chiffres min, plus si besoin),
+// répété autant de fois que la personne a de tickets payés. Aucun en-tête,
+// le jeu lit chaque ligne comme un libellé de bille.
 app.get('/api/lotteries/:id/marbles.csv', requireAdmin, (req, res) => {
   const lottery = db.lotteries.find((l) => l.id === req.params.id);
   if (!lottery) { res.status(404).json({ error: 'Loterie introuvable.' }); return; }
   const entries = db.lotteryEntries
     .filter((e) => e.lotteryId === lottery.id && e.hasPaid)
     .sort((a, b) => a.entryNumber - b.entryNumber);
-  const escape = (v) => `"${String(v ?? '').replaceAll('"', '""')}"`;
-  const rows = [['marble_n', 'entry_number', 'first_name', 'last_name', 'phone']];
-  let marble = 0;
+  const maxNum = entries.reduce((m, e) => Math.max(m, e.entryNumber), 0);
+  const width = Math.max(2, String(maxNum).length);
+  const lines = [];
   for (const e of entries) {
-    for (let i = 0; i < e.ticketCount; i++) {
-      marble += 1;
-      rows.push([marble, e.entryNumber, e.firstName, e.lastName, e.phone || '']);
-    }
+    const label = `Participant ${String(e.entryNumber).padStart(width, '0')}`;
+    for (let i = 0; i < e.ticketCount; i++) lines.push(label);
   }
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="loterie-${lottery.id}-billes.csv"`);
-  res.send(rows.map((r) => r.map(escape).join(',')).join('\n'));
+  res.send(lines.join('\n'));
 });
 
 // Tirage au sort serveur : pioche aléatoirement parmi les tickets PAYÉS.
