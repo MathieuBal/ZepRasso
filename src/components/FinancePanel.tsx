@@ -61,35 +61,49 @@ export default function FinancePanel({ reloadKey = 0 }: Props) {
           <table>
             <thead><tr><th>Source</th><th>Pot / Revenu</th><th>Ta part</th><th>À redistribuer</th></tr></thead>
             <tbody>
-              <tr>
-                <td><strong>Concours</strong><br /><span className="muted" style={{ fontSize: '0.8rem' }}>{contest.paidParticipants} inscrit(s) payé(s)</span></td>
-                <td style={{ fontFamily: 'monospace' }}>{formatMoney(contest.pool)}</td>
-                <td style={{ fontFamily: 'monospace' }}>{formatMoney(contest.orgaCut)}</td>
-                <td style={{ fontFamily: 'monospace' }}>{formatMoney(contest.toPayOut)}</td>
-              </tr>
+              {/* Concours : global ou détaillé par catégorie */}
+              {contest.categories.length > 1 ? (
+                contest.categories.map((c) => (
+                  <tr key={c.category || '__g__'}>
+                    <td><strong>Concours</strong> · {c.category || 'Général'}<br /><span className="muted" style={{ fontSize: '0.8rem' }}>{c.paidCount} payé(s)</span></td>
+                    <td style={{ fontFamily: 'monospace' }}>{formatMoney(c.pool)}</td>
+                    <td style={{ fontFamily: 'monospace' }}>{formatMoney(c.orgaCut)}</td>
+                    <td style={{ fontFamily: 'monospace' }}>{formatMoney(c.net)}</td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td><strong>Concours</strong><br /><span className="muted" style={{ fontSize: '0.8rem' }}>{contest.paidParticipants} inscrit(s) payé(s)</span></td>
+                  <td style={{ fontFamily: 'monospace' }}>{formatMoney(contest.pool)}</td>
+                  <td style={{ fontFamily: 'monospace' }}>{formatMoney(contest.orgaCut)}</td>
+                  <td style={{ fontFamily: 'monospace' }}>{formatMoney(contest.toPayOut)}</td>
+                </tr>
+              )}
 
               {hasLotteries && lotteries.detail.map((l) => (
                 <tr key={l.id}>
-                  <td><strong>Loterie</strong> · {l.name}<br /><span className="muted" style={{ fontSize: '0.8rem' }}>{l.paidTickets} ticket(s) payé(s)</span></td>
+                  <td><strong>Loterie</strong> · {l.name}<br /><span className="muted" style={{ fontSize: '0.8rem' }}>{l.paidTickets} ticket(s) payé(s){l.status === 'drawn' ? ' · tirée' : ''}</span></td>
                   <td style={{ fontFamily: 'monospace' }}>{formatMoney(l.revenue)}</td>
                   <td style={{ fontFamily: 'monospace' }}>{formatMoney(l.revenue)}</td>
                   <td style={{ fontFamily: 'monospace', color: 'var(--text-3)' }}>—</td>
                 </tr>
               ))}
 
-              {hasRaces && races.map((r) => (
-                <tr key={r.id}>
-                  <td>
-                    <strong>Course</strong> · {r.name}
-                    <br /><span className="muted" style={{ fontSize: '0.8rem' }}>
-                      inscriptions + paris{r.winnerDeclared ? ' · vainqueur déclaré' : ''}
-                    </span>
-                  </td>
-                  <td style={{ fontFamily: 'monospace' }}>{formatMoney(r.pilotPool + r.betPool)}</td>
-                  <td style={{ fontFamily: 'monospace' }}>{formatMoney(r.orgaCut)}</td>
-                  <td style={{ fontFamily: 'monospace' }}>{formatMoney(r.pilotToPayOut + r.betToPayOut)}</td>
-                </tr>
-              ))}
+              {/* Courses : 2 sous-lignes — compétiteurs / paris visiteurs */}
+              {hasRaces && races.map((r) => [
+                <tr key={`${r.id}-pilots`}>
+                  <td><strong>Course</strong> · {r.name}<br /><span className="muted" style={{ fontSize: '0.8rem' }}>Compétiteurs (inscriptions)</span></td>
+                  <td style={{ fontFamily: 'monospace' }}>{formatMoney(r.pilotPool)}</td>
+                  <td style={{ fontFamily: 'monospace' }}>{formatMoney(r.pilotOrgaCut)}</td>
+                  <td style={{ fontFamily: 'monospace' }}>{formatMoney(r.pilotToPayOut)}</td>
+                </tr>,
+                <tr key={`${r.id}-bets`}>
+                  <td style={{ paddingLeft: 18 }}><span className="muted" style={{ fontSize: '0.85rem' }}>↳ {r.name} · Paris visiteurs{r.winnerDeclared ? ' · réglé' : ' · estimé'}</span></td>
+                  <td style={{ fontFamily: 'monospace' }}>{formatMoney(r.betPool)}</td>
+                  <td style={{ fontFamily: 'monospace' }}>{formatMoney(r.betOrgaCut)}</td>
+                  <td style={{ fontFamily: 'monospace' }}>{formatMoney(r.betToPayOut)}</td>
+                </tr>,
+              ])}
 
               <tr style={{ borderTop: '2px solid var(--border)' }}>
                 <td><strong>TOTAL</strong></td>

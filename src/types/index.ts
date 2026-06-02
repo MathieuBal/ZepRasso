@@ -223,6 +223,7 @@ export type FinanceSummary = {
     pool: number;
     orgaCut: number;
     toPayOut: number;
+    categories: CategoryPool[];
   };
   lotteries: {
     detail: { id: string; name: string; revenue: number; paidTickets: number; status: string }[];

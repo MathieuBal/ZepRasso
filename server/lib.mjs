@@ -558,6 +558,7 @@ export function computeBetPayouts(bets, winnerPilotId, orgaPercent = 20) {
 export function computeFinanceSummary(data) {
   const {
     event,
+    vehicles = [],
     participants = [],
     lotteries = [],
     lotteryEntries = [],
@@ -566,14 +567,17 @@ export function computeFinanceSummary(data) {
     raceBets = [],
   } = data || {};
 
-  // Concours : part orga = 10 % du pot des inscriptions payées.
+  // Concours : part orga = 10 % du pot des inscriptions payées. Détail par
+  // catégorie pour le récap granulaire.
   const paidParticipants = participants.filter((p) => p.hasPaid).length;
   const contestPrize = computePrizePool(paidParticipants, event?.entryFee || 0, 10);
+  const categories = computeCategoryPools(vehicles, participants, event?.entryFee || 0);
   const contest = {
     paidParticipants,
     pool: contestPrize.pool,
     orgaCut: contestPrize.orgaCut,
     toPayOut: contestPrize.net,
+    categories,
   };
 
   // Loteries : revenu intégralement à l'orga (la voiture est offerte par l'orga).
