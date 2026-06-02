@@ -4,6 +4,8 @@ import {
   clamp,
   computeAudit,
   computeBetPayouts,
+  computeCategoryPools,
+  computeFinanceSummary,
   computePrizePool,
   computeRaceStandings,
   defaultDb,
@@ -442,5 +444,75 @@ describe('computeBetPayouts (pari mutuel)', () => {
     expect(r.pool).toBe(100000);
     expect(r.winners).toEqual([]);
     expect(r.orgaTakesAll).toBe(false);
+  });
+});
+
+describe('computeFinanceSummary', () => {
+  it('aggregates orga take across contest, lotteries and races', () => {
+    const data = {
+      event: { entryFee: 100000 },
+      participants: [
+        { id: 'p1', hasPaid: true }, { id: 'p2', hasPaid: true },
+        { id: 'p3', hasPaid: false }, { id: 'p4', hasPaid: true },
+      ], // 3 payés -> pool 300k, orga 10% = 30k, net 270k
+      lotteries: [{ id: 'l1', name: 'Sultan', ticketPrice: 50000, status: 'open' }],
+      lotteryEntries: [
+        { lotteryId: 'l1', ticketCount: 3, hasPaid: true },
+        { lotteryId: 'l1', ticketCount: 2, hasPaid: false },
+      ], // 3 billes payées * 50k = 150k revenu orga
+      races: [{ id: 'r1', name: 'Sprint', entryFee: 100000, orgaCutPercent: 10, betOrgaCutPercent: 20, winnerPilotId: undefined }],
+      racePilots: [
+        { id: 'rp1', raceId: 'r1', hasPaid: true }, { id: 'rp2', raceId: 'r1', hasPaid: true },
+      ], // pool pilotes 200k, orga 10% = 20k
+      raceBets: [
+        { id: 'b1', raceId: 'r1', pilotId: 'rp1', amount: 50000, hasPaid: true },
+        { id: 'b2', raceId: 'r1', pilotId: 'rp2', amount: 30000, hasPaid: false },
+      ], // pot paris payés 50k, orga 20% = 10k (estimation, pas de vainqueur)
+    };
+    const r = computeFinanceSummary(data);
+    expect(r.contest.pool).toBe(300000);
+    expect(r.contest.orgaCut).toBe(30000);
+    expect(r.lotteries.revenue).toBe(150000);
+    expect(r.races[0].pilotOrgaCut).toBe(20000);
+    expect(r.races[0].betOrgaCut).toBe(10000);
+    // Ta part = 30k (concours) + 150k (loterie) + 20k + 10k (course) = 210k
+    expect(r.totals.orgaTake).toBe(210000);
+    // À redistribuer = net concours 270k + net pilotes 180k + net paris 40k = 490k
+    expect(r.totals.toPayOut).toBe(270000 + 180000 + 40000);
+  });
+
+  it('handles an empty db gracefully', () => {
+    const r = computeFinanceSummary({ event: { entryFee: 0 } });
+    expect(r.totals).toEqual({ orgaTake: 0, toPayOut: 0, grossHandled: 0 });
+  });
+});
+
+describe('computeCategoryPools', () => {
+  it('routes each paid participant fee to its vehicle category pool', () => {
+    const vehicles = [
+      { id: 'v1', participantId: 'p1', category: 'JDM' },
+      { id: 'v2', participantId: 'p2', category: 'JDM' },
+      { id: 'v3', participantId: 'p3', category: 'Muscle' },
+      { id: 'v4', participantId: 'p4', category: '' }, // → bucket Général
+    ];
+    const participants = [
+      { id: 'p1', hasPaid: true },
+      { id: 'p2', hasPaid: true },
+      { id: 'p3', hasPaid: true },
+      { id: 'p4', hasPaid: false }, // pas payé → ignoré
+      { id: 'p5', hasPaid: true },  // payé mais sans véhicule → aucun pot
+    ];
+    const pools = computeCategoryPools(vehicles, participants, 100000);
+    const jdm = pools.find((p) => p.category === 'JDM');
+    const muscle = pools.find((p) => p.category === 'Muscle');
+    expect(jdm.paidCount).toBe(2);
+    expect(jdm.pool).toBe(200000);
+    expect(jdm.orgaCut).toBe(20000);
+    expect(muscle.paidCount).toBe(1);
+    expect(muscle.pool).toBe(100000);
+    // p4 pas payé, p5 sans véhicule → pas de pot 'Général'
+    expect(pools.find((p) => p.category === '')).toBeUndefined();
+    // Tri par pool décroissant.
+    expect(pools[0].category).toBe('JDM');
   });
 });

@@ -216,3 +216,42 @@ export type VehicleScore = {
     rpPresentation: number;
   };
 };
+
+export type FinanceSummary = {
+  contest: {
+    paidParticipants: number;
+    pool: number;
+    orgaCut: number;
+    toPayOut: number;
+    categories: CategoryPool[];
+  };
+  lotteries: {
+    detail: { id: string; name: string; revenue: number; paidTickets: number; status: string }[];
+    revenue: number;
+  };
+  races: {
+    id: string;
+    name: string;
+    status: string;
+    winnerDeclared: boolean;
+    pilotPool: number;
+    pilotOrgaCut: number;
+    pilotToPayOut: number;
+    betPool: number;
+    betOrgaCut: number;
+    betToPayOut: number;
+    orgaCut: number;
+  }[];
+  totals: {
+    orgaTake: number;
+    toPayOut: number;
+    grossHandled: number;
+  };
+};
+
+export type CategoryPool = PrizePool & { category: string; paidCount: number };
+
+export type CategoriesInfo = {
+  entryFee: number;
+  categories: CategoryPool[];
+};

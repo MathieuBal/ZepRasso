@@ -550,3 +550,98 @@ export function computeBetPayouts(bets, winnerPilotId, orgaPercent = 20) {
   }
   return { pool, orgaCut, net, winners, orgaTakesAll: false };
 }
+
+// ─── Récap financier de la soirée (toutes sources agrégées) ─────────────────
+// Pur : prend les collections de la DB et renvoie ce que l'orga garde, ce qu'il
+// doit redistribuer, et le détail par source. Réutilise les helpers de cagnotte
+// existants pour rester cohérent au centime près.
+export function computeFinanceSummary(data) {
+  const {
+    event,
+    vehicles = [],
+    participants = [],
+    lotteries = [],
+    lotteryEntries = [],
+    races = [],
+    racePilots = [],
+    raceBets = [],
+  } = data || {};
+
+  // Concours : part orga = 10 % du pot des inscriptions payées. Détail par
+  // catégorie pour le récap granulaire.
+  const paidParticipants = participants.filter((p) => p.hasPaid).length;
+  const contestPrize = computePrizePool(paidParticipants, event?.entryFee || 0, 10);
+  const categories = computeCategoryPools(vehicles, participants, event?.entryFee || 0);
+  const contest = {
+    paidParticipants,
+    pool: contestPrize.pool,
+    orgaCut: contestPrize.orgaCut,
+    toPayOut: contestPrize.net,
+    categories,
+  };
+
+  // Loteries : revenu intégralement à l'orga (la voiture est offerte par l'orga).
+  const lotteriesDetail = lotteries.map((l) => {
+    const entries = lotteryEntries.filter((e) => e.lotteryId === l.id);
+    const stats = computeLotteryStats(entries, l.ticketPrice);
+    return { id: l.id, name: l.name, revenue: stats.revenue, paidTickets: stats.paidTickets, status: l.status };
+  });
+  const lotteriesRevenue = lotteriesDetail.reduce((s, l) => s + l.revenue, 0);
+
+  // Courses : part orga = cut sur les inscriptions pilotes + cut sur les paris.
+  const racesDetail = races.map((r) => {
+    const paidPilots = racePilots.filter((p) => p.raceId === r.id && p.hasPaid).length;
+    const pilotPrize = computePrizePool(paidPilots, r.entryFee, r.orgaCutPercent);
+    const bets = raceBets.filter((b) => b.raceId === r.id);
+    const betPayouts = computeBetPayouts(bets, r.winnerPilotId, r.betOrgaCutPercent);
+    return {
+      id: r.id,
+      name: r.name,
+      status: r.status,
+      winnerDeclared: Boolean(r.winnerPilotId),
+      pilotPool: pilotPrize.pool,
+      pilotOrgaCut: pilotPrize.orgaCut,
+      pilotToPayOut: pilotPrize.net,
+      betPool: betPayouts.pool,
+      betOrgaCut: betPayouts.orgaCut,
+      betToPayOut: betPayouts.net,
+      orgaCut: pilotPrize.orgaCut + betPayouts.orgaCut,
+    };
+  });
+
+  const racesOrgaCut = racesDetail.reduce((s, r) => s + r.orgaCut, 0);
+  const racesToPayOut = racesDetail.reduce((s, r) => s + r.pilotToPayOut + r.betToPayOut, 0);
+
+  const orgaTake = contest.orgaCut + lotteriesRevenue + racesOrgaCut;
+  const toPayOut = contest.toPayOut + racesToPayOut;
+  const grossHandled = contest.pool + lotteriesRevenue
+    + racesDetail.reduce((s, r) => s + r.pilotPool + r.betPool, 0);
+
+  return {
+    contest,
+    lotteries: { detail: lotteriesDetail, revenue: lotteriesRevenue },
+    races: racesDetail,
+    totals: { orgaTake, toPayOut, grossHandled },
+  };
+}
+
+// ─── Cagnottes par catégorie de concours ────────────────────────────────────
+// Chaque participant payé alimente le pot de SA catégorie (celle de son
+// véhicule). Un participant payé sans véhicule (donc sans catégorie) n'est
+// rattaché à aucun pot. Catégorie vide → bucket '' (affiché « Général »).
+export function computeCategoryPools(vehicles, participants, entryFee) {
+  const catByParticipant = new Map();
+  for (const v of vehicles) {
+    if (v.participantId) catByParticipant.set(v.participantId, v.category || '');
+  }
+  const paidByCat = new Map();
+  for (const p of participants) {
+    if (!p.hasPaid) continue;
+    const cat = catByParticipant.get(p.id);
+    if (cat === undefined) continue; // payé mais sans véhicule rattaché
+    paidByCat.set(cat, (paidByCat.get(cat) || 0) + 1);
+  }
+  return [...paidByCat.entries()]
+    .map(([category, paidCount]) => ({ category, paidCount, ...computePrizePool(paidCount, entryFee, 10) }))
+    .sort((a, b) => b.pool - a.pool);
+}

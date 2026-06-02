@@ -10,6 +10,8 @@ import {
   bestTime,
   computeBetPayouts,
   computeBetTotalsByPilot,
+  computeCategoryPools,
+  computeFinanceSummary,
   computeLotteryStats,
   computePrizePool,
   computeRaceStandings,
@@ -448,6 +450,13 @@ app.get('/api/prize', (_req, res) => {
   const paidCount = db.participants.filter((p) => p.hasPaid).length;
   const fee = db.event.entryFee || 0;
   res.json({ entryFee: fee, paidCount, ...computePrizePool(paidCount, fee) });
+});
+
+// Cagnottes par catégorie (public, montants + comptes seulement, aucune donnée
+// perso). Permet d'afficher un podium et un pot par catégorie.
+app.get('/api/categories', (_req, res) => {
+  const fee = db.event.entryFee || 0;
+  res.json({ entryFee: fee, categories: computeCategoryPools(db.vehicles, db.participants, fee) });
 });
 
 app.patch('/api/event', requireAdmin, (req, res) => {
@@ -1037,6 +1046,11 @@ app.post('/api/races/:id/winner', requireAdmin, (req, res) => {
 
 app.get('/api/admin/audit', requireAdmin, (_req, res) => {
   res.json(computeAudit(db.votes));
+});
+
+// Récap financier de toute la soirée (concours + loteries + courses + paris).
+app.get('/api/admin/finance', requireAdmin, (_req, res) => {
+  res.json(computeFinanceSummary(db));
 });
 
 app.get('/api/admin/backup', requireAdmin, (_req, res) => {

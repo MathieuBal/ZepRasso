@@ -2,6 +2,7 @@ import { Download, QrCode, RefreshCw, Shield, Trash2, Upload } from 'lucide-reac
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import ImagePicker from '../components/ImagePicker';
+import FinancePanel from '../components/FinancePanel';
 import LotteriesPanel from '../components/LotteriesPanel';
 import PageHeader from '../components/PageHeader';
 import RacesPanel from '../components/RacesPanel';
@@ -66,6 +67,23 @@ export default function AdminPage() {
   const paidCount = participants.filter((p) => p.hasPaid).length;
   const entryFee = rassoEvent?.entryFee ?? 0;
   const prize = useMemo(() => computePrizePool(paidCount, entryFee), [paidCount, entryFee]);
+  // Cagnottes par catégorie : chaque participant payé alimente le pot de la
+  // catégorie de son véhicule. Calculé localement (l'admin a déjà les données).
+  const categoryPools = useMemo(() => {
+    const catByParticipant = new Map<string, string>();
+    vehicles.forEach((v) => { if (v.participantId) catByParticipant.set(v.participantId, (v.category || '').trim()); });
+    const paidByCat = new Map<string, number>();
+    participants.forEach((p) => {
+      if (!p.hasPaid) return;
+      const cat = catByParticipant.get(p.id);
+      if (cat === undefined) return;
+      paidByCat.set(cat, (paidByCat.get(cat) || 0) + 1);
+    });
+    return [...paidByCat.entries()]
+      .map(([category, count]) => ({ category, count, ...computePrizePool(count, entryFee) }))
+      .sort((a, b) => b.pool - a.pool);
+  }, [vehicles, participants, entryFee]);
+  const usesCategories = categoryPools.length > 1;
   // Participants déjà rattachés à un véhicule (pour l'avertissement "soft").
   const linkedParticipantIds = useMemo(
     () => new Set(vehicles.map((v) => v.participantId).filter(Boolean) as string[]),
@@ -341,6 +359,8 @@ export default function AdminPage() {
         {error && <p className="error">{error}</p>}
       </div>
 
+      <FinancePanel reloadKey={votes.length + vehicles.length + participants.length} />
+
       <div className="panel grid">
         <div className="between">
           <div>
@@ -461,18 +481,36 @@ export default function AdminPage() {
           <span className="badge ok">Cagnotte : {formatMoney(prize.pool)}</span>
           <span className="badge wait">Part orga (10 %) : {formatMoney(prize.orgaCut)}</span>
         </div>
-        <p className="muted" style={{ marginTop: -4 }}>
-          Répartition du net ({formatMoney(prize.net)}) sur le podium :
-          {' '}🥇 {formatMoney(prize.podium.first)} · 🥈 {formatMoney(prize.podium.second)} · 🥉 {formatMoney(prize.podium.third)}.
-          {scores.length > 0 && (
-            <>
-              {' '}Actuellement :
-              {scores[0] && <> 🥇 <strong>{scores[0].vehicle.name}</strong></>}
-              {scores[1] && <> · 🥈 <strong>{scores[1].vehicle.name}</strong></>}
-              {scores[2] && <> · 🥉 <strong>{scores[2].vehicle.name}</strong></>}.
-            </>
-          )}
-        </p>
+        {usesCategories ? (
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>Catégorie</th><th>Payés</th><th>Cagnotte</th><th>🥇 / 🥈 / 🥉</th></tr></thead>
+              <tbody>
+                {categoryPools.map((c) => (
+                  <tr key={c.category || '__general__'}>
+                    <td><strong>{c.category || 'Général'}</strong></td>
+                    <td>{c.count}</td>
+                    <td style={{ fontFamily: 'monospace' }}>{formatMoney(c.pool)}</td>
+                    <td style={{ fontFamily: 'monospace' }}>{formatMoney(c.podium.first)} / {formatMoney(c.podium.second)} / {formatMoney(c.podium.third)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="muted" style={{ marginTop: -4 }}>
+            Répartition du net ({formatMoney(prize.net)}) sur le podium :
+            {' '}🥇 {formatMoney(prize.podium.first)} · 🥈 {formatMoney(prize.podium.second)} · 🥉 {formatMoney(prize.podium.third)}.
+            {scores.length > 0 && (
+              <>
+                {' '}Actuellement :
+                {scores[0] && <> 🥇 <strong>{scores[0].vehicle.name}</strong></>}
+                {scores[1] && <> · 🥈 <strong>{scores[1].vehicle.name}</strong></>}
+                {scores[2] && <> · 🥉 <strong>{scores[2].vehicle.name}</strong></>}.
+              </>
+            )}
+          </p>
+        )}
         {participants.length === 0 ? (
           <p className="muted">Aucune inscription pour l'instant. Ouvre la phase « Inscriptions » pour que les concurrents s'inscrivent.</p>
         ) : (
