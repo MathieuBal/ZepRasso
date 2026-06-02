@@ -903,6 +903,60 @@ app.delete('/api/race-pilots/:id', requireAdmin, (req, res) => {
 // Seuls les paris PAYÉS rentrent dans le pot. Le vainqueur d'un pari est
 // défini par la déclaration du vainqueur de la course (POST .../winner).
 
+// Endpoint PUBLIC pour la page de paris : ne renvoie que les infos utiles aux
+// parieurs (jamais le détail des paris ni de données admin).
+app.get('/api/races/:id/public', (req, res) => {
+  const race = db.races.find((r) => r.id === req.params.id);
+  if (!race) { res.status(404).json({ error: 'Course introuvable.' }); return; }
+  const pilots = db.racePilots
+    .filter((p) => p.raceId === race.id)
+    .map((p) => ({ id: p.id, pseudo: p.pseudo, vehicle: p.vehicle }));
+  const bets = db.raceBets.filter((b) => b.raceId === race.id);
+  const totalsByPilot = {};
+  for (const b of bets) {
+    if (!b.hasPaid) continue;
+    if (!totalsByPilot[b.pilotId]) totalsByPilot[b.pilotId] = 0;
+    totalsByPilot[b.pilotId] += b.amount;
+  }
+  res.json({
+    race: {
+      id: race.id,
+      name: race.name,
+      description: race.description,
+      status: race.status,
+      bettingStatus: race.bettingStatus,
+      betOrgaCutPercent: race.betOrgaCutPercent,
+      winnerPilotId: race.winnerPilotId,
+    },
+    pilots,
+    totalsByPilot,
+  });
+});
+
+// Soumission publique de pari : créé en hasPaid=false (l'orga valide ensuite).
+// Gated par bettingStatus === 'open'.
+app.post('/api/races/:id/bets-public', (req, res) => {
+  const race = db.races.find((r) => r.id === req.params.id);
+  if (!race) { res.status(404).json({ error: 'Course introuvable.' }); return; }
+  if (race.bettingStatus !== 'open') { res.status(403).json({ error: 'Les paris ne sont pas ouverts pour cette course.' }); return; }
+  const body = req.body || {};
+  const pilot = db.racePilots.find((p) => p.id === String(body.pilotId || '') && p.raceId === race.id);
+  if (!pilot) { res.status(400).json({ error: 'Pilote introuvable.' }); return; }
+  const bet = normalizeRaceBet({
+    raceId: race.id,
+    bettorPseudo: body.bettorPseudo,
+    voterId: body.voterId,
+    pilotId: pilot.id,
+    amount: body.amount,
+    hasPaid: false, // toujours en attente côté public
+  });
+  if (!bet) { res.status(400).json({ error: 'Pseudo et mise > 0 obligatoires.' }); return; }
+  db.raceBets.push(bet);
+  saveDb();
+  // Réponse minimale, sans IP ni metadata interne.
+  res.json({ id: bet.id, pilotId: bet.pilotId, amount: bet.amount, bettorPseudo: bet.bettorPseudo, hasPaid: false });
+});
+
 app.get('/api/races/:id/bets', requireAdmin, (req, res) => {
   const race = db.races.find((r) => r.id === req.params.id);
   if (!race) { res.status(404).json({ error: 'Course introuvable.' }); return; }

@@ -4,6 +4,7 @@ import AdminPage from '../pages/AdminPage';
 import HomePage from '../pages/HomePage';
 import LoginPseudoPage from '../pages/LoginPseudoPage';
 import QrPage from '../pages/QrPage';
+import RaceBetPage from '../pages/RaceBetPage';
 import RegisterPage from '../pages/RegisterPage';
 import ResultsPage from '../pages/ResultsPage';
 import VehicleVotePage from '../pages/VehicleVotePage';
@@ -16,6 +17,7 @@ export default function App() {
         <Route path="/" element={<HomePage />} />
         <Route path="/login" element={<LoginPseudoPage />} />
         <Route path="/register" element={<RegisterPage />} />
+        <Route path="/races/:raceId/bet" element={<RaceBetPage />} />
         <Route path="/vehicles" element={<VehiclesPage />} />
         <Route path="/vehicles/:vehicleId" element={<VehicleVotePage />} />
         <Route path="/results" element={<ResultsPage />} />

@@ -1,4 +1,4 @@
-import { Plus, Trash2, UserPlus } from 'lucide-react';
+import { Link2, Plus, Trash2, UserPlus } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import {
   addRaceBet,
@@ -405,6 +405,10 @@ export default function RacesPanel({ onMessage, onError }: Props) {
                   {selected.bettingStatus === 'open' ? 'Fermer les paris' : 'Ouvrir les paris'}
                 </button>
               )}
+              <button className="button" onClick={() => {
+                const url = `${window.location.origin}/races/${selected.id}/bet`;
+                navigator.clipboard?.writeText(url).then(() => onMessage('Lien copié — partage-le ou affiche le QR pour les parieurs.'), () => onError('Impossible de copier le lien.'));
+              }}><Link2 size={14} /> Copier lien parieur</button>
             </div>
           </div>
 

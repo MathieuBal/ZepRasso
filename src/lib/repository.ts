@@ -302,6 +302,33 @@ export function declareRaceWinner(raceId: string, pilotId: string | null): Promi
   return api(`/races/${raceId}/winner`, { method: 'POST', headers: adminHeaders(), body: JSON.stringify({ pilotId }) });
 }
 
+// ─── Vue publique des paris (pas d'auth) ────────────────────────────────────
+
+export type PublicRaceInfo = {
+  race: {
+    id: string;
+    name: string;
+    description?: string;
+    status: Race['status'];
+    bettingStatus: Race['bettingStatus'];
+    betOrgaCutPercent: number;
+    winnerPilotId?: string;
+  };
+  pilots: { id: string; pseudo: string; vehicle?: string }[];
+  totalsByPilot: Record<string, number>;
+};
+
+export function getRacePublic(raceId: string): Promise<PublicRaceInfo> {
+  return api<PublicRaceInfo>(`/races/${raceId}/public`);
+}
+
+export function placePublicBet(raceId: string, input: { bettorPseudo: string; pilotId: string; amount: number }): Promise<{ id: string; bettorPseudo: string; pilotId: string; amount: number; hasPaid: false }> {
+  return api(`/races/${raceId}/bets-public`, {
+    method: 'POST',
+    body: JSON.stringify({ ...input, voterId: getVoterId() }),
+  });
+}
+
 // Téléchargement direct (admin-headers) du CSV billes.
 export async function downloadMarblesCsv(lotteryId: string): Promise<Blob> {
   const response = await fetch(`/api/lotteries/${lotteryId}/marbles.csv`, { headers: adminHeaders() });
