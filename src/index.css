@@ -719,6 +719,184 @@ tr:last-child td { border-bottom: 0; }
   border-radius: 12px; background: #160a26;
 }
 
+/* ════════════════════════════════════════════════════════════
+   ZepRasso — composants additifs pour courses / paris / loterie
+   ─────────────────────────────────────────────────────────────
+   À COLLER À LA FIN de src/index.css (juste AVANT le bloc
+   « @media (max-width: 820px) » final, ou tout en bas du fichier).
+
+   100 % additif : n'écrase aucune classe existante. Réutilise les
+   variables (--magenta, --cyan, --f-display…) déjà définies.
+   ════════════════════════════════════════════════════════════ */
+
+/* ─── Argent (dollars GTA RP) ───────────────────────────── */
+.money {
+  font-family: var(--f-mono);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--cyan-soft);
+  letter-spacing: -0.01em;
+}
+.money.pos { color: var(--cyan); }
+.money.neg { color: #ff7aa6; }
+.money-big {
+  font-family: var(--f-display);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  font-size: clamp(2.2rem, 6vw, 3.2rem);
+}
+
+/* ─── Tuiles de stats (courses / loterie / admin) ───────── */
+.stat-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+}
+.stat-tile {
+  padding: 14px 16px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-m);
+  background: var(--surface);
+}
+.stat-tile .st-num {
+  font-family: var(--f-display);
+  font-size: 1.9rem; font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.stat-tile .st-label {
+  font-family: var(--f-mono);
+  font-size: 0.64rem; letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--text-3); margin-top: 6px;
+}
+
+/* ─── Bandeau pot (paris) ───────────────────────────────── */
+.bet-pool {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  padding: 16px 20px;
+  border-radius: var(--radius-m);
+  border: 1px solid rgba(34, 230, 255, 0.35);
+  background: linear-gradient(120deg, rgba(34,230,255,0.1), rgba(255,43,214,0.06));
+}
+
+/* ─── Étapes « comment ça marche » ──────────────────────── */
+.steps {
+  display: grid; gap: 12px; margin: 0; padding: 0; list-style: none;
+}
+.steps li {
+  display: grid; grid-template-columns: 32px 1fr; gap: 12px; align-items: start;
+  font-size: 0.95rem; line-height: 1.5; color: var(--text-2);
+}
+.steps li .step-n {
+  width: 30px; height: 30px; border-radius: 8px;
+  display: grid; place-items: center;
+  font-family: var(--f-display); font-weight: 800; font-size: 1.1rem; color: #0a0214;
+  background: linear-gradient(135deg, var(--magenta), var(--violet));
+  box-shadow: 0 0 12px rgba(255, 43, 214, 0.4);
+}
+.steps li strong { color: var(--text); }
+
+/* ─── Pilotes + cotes (paris) ───────────────────────────── */
+.pilot-list { display: grid; gap: 8px; }
+.pilot-row {
+  display: grid; gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-m);
+  background: var(--surface);
+  transition: border-color .12s ease, background .12s ease;
+}
+.pilot-row.is-selected {
+  border-color: var(--magenta);
+  background: rgba(255, 43, 214, 0.07);
+  box-shadow: 0 0 16px -2px rgba(255, 43, 214, 0.35);
+}
+.pilot-row.is-winner {
+  border-color: var(--gold);
+  background: rgba(240, 196, 91, 0.08);
+}
+.pilot-row .pr-top {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+}
+.pilot-row .pr-name {
+  font-family: var(--f-display); font-size: 1.2rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: -0.01em; line-height: 1;
+}
+.pilot-row .pr-vehicle { font-size: 0.8rem; color: var(--text-3); margin-top: 3px; }
+.pilot-row .pr-share {
+  font-family: var(--f-mono); font-size: 0.72rem; color: var(--text-3);
+  white-space: nowrap; text-align: right;
+}
+.odds-bar {
+  height: 6px; border-radius: 99px;
+  background: var(--line-soft); overflow: hidden;
+}
+.odds-bar > span {
+  display: block; height: 100%; border-radius: 99px;
+  background: linear-gradient(90deg, var(--magenta), var(--cyan));
+  box-shadow: 0 0 8px rgba(255, 43, 214, 0.4);
+  transition: width .35s cubic-bezier(.2,.7,.3,1);
+}
+
+/* ─── Ticket loterie ────────────────────────────────────── */
+.ticket {
+  position: relative; overflow: hidden;
+  border-radius: var(--radius-l);
+  border: 1px solid var(--line);
+  background: linear-gradient(135deg, #1f0c3d, #11052a);
+  padding: 22px;
+}
+.ticket::before, .ticket::after {
+  content: ''; position: absolute; width: 26px; height: 26px; border-radius: 50%;
+  background: var(--bg); top: 50%; transform: translateY(-50%);
+}
+.ticket::before { left: -13px; }
+.ticket::after  { right: -13px; }
+.ticket-perf {
+  border: 0; border-top: 2px dashed var(--line); margin: 16px 0; opacity: .7;
+}
+
+/* ─── Barre d'onglets visiteur (mobile) ─────────────────── */
+/* Masquée sur desktop : la barre du haut (.nav-core) prend le relais. */
+.tabbar { display: none; }
+.tabbar-spacer { display: none; }
+
+@media (max-width: 820px) {
+  /* Les onglets principaux passent en bas ; on les retire du top nav. */
+  .nav-core { display: none !important; }
+  /* Liens déjà présents dans la tabbar : on évite le doublon en haut. */
+  .hide-on-mobile { display: none !important; }
+
+  .tabbar {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 60;
+    background: rgba(10, 2, 20, 0.92);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-top: 1px solid var(--line-soft);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .tabbar a {
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    padding: 9px 0 11px;
+    color: var(--text-3);
+    text-decoration: none;
+    font-family: var(--f-mono);
+    font-size: 0.58rem; letter-spacing: 0.1em; text-transform: uppercase;
+  }
+  .tabbar a.active { color: var(--text); }
+  .tabbar a .tab-dot { width: 4px; height: 4px; border-radius: 50%; background: transparent; }
+  .tabbar a.active .tab-dot { background: var(--magenta); box-shadow: 0 0 8px var(--magenta); }
+
+  /* Réserve la hauteur de la tabbar pour ne rien masquer. */
+  .tabbar-spacer { display: block; height: 72px; }
+}
+
+
 /* ─── Responsive ────────────────────────────────────────── */
 @media (max-width: 820px) {
   .hero, .grid.two, .grid.three { grid-template-columns: 1fr; }

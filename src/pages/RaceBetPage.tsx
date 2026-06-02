@@ -28,7 +28,6 @@ export default function RaceBetPage() {
   }, [raceId]);
 
   useEffect(() => { load(); }, [load]);
-  // Rafraîchissement doux des totaux par pilote pendant que la phase est ouverte.
   usePolling(load, 10000);
 
   if (loading) return <p className="notice">Chargement…</p>;
@@ -37,12 +36,11 @@ export default function RaceBetPage() {
   const { race, pilots, totalsByPilot } = info;
   const totalPool = Object.values(totalsByPilot).reduce((s, v) => s + v, 0);
 
-  // Bandeau d'état (ouvert / fermé / verrouillé / vainqueur déclaré)
   const stateBadge = race.bettingStatus === 'open'
-    ? { cls: 'ok badge-live', text: 'PARIS OUVERTS' }
+    ? { tone: 'ok badge-live', text: 'PARIS OUVERTS' }
     : race.winnerPilotId
-      ? { cls: 'closed', text: 'COURSE TERMINÉE' }
-      : { cls: 'wait', text: 'PARIS FERMÉS' };
+      ? { tone: 'closed', text: 'COURSE TERMINÉE' }
+      : { tone: 'wait', text: 'PARIS FERMÉS' };
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -63,70 +61,93 @@ export default function RaceBetPage() {
       setAmount('');
       load();
     } catch (err) {
-      setError((err as Error).message || 'Impossible d\'enregistrer le pari.');
+      setError((err as Error).message || "Impossible d'enregistrer le pari.");
     } finally {
       setSubmitting(false);
     }
   }
+
+  const bettingOpen = race.bettingStatus === 'open' && pilots.length > 0;
 
   return (
     <section className="grid" style={{ gap: 22 }}>
       <PageHeader
         title={race.name}
         badge={stateBadge.text}
-        badgeTone={stateBadge.cls.includes('ok') ? 'ok' : stateBadge.cls.includes('closed') ? 'closed' : 'wait'}
+        badgeTone={stateBadge.tone.includes('ok') ? 'ok' : stateBadge.tone.includes('closed') ? 'closed' : 'wait'}
       >
         {race.description && <p className="lead">{race.description}</p>}
       </PageHeader>
 
-      {/* Comment ça marche — sticky, visible dès l'ouverture pour rassurer */}
-      <div className="panel" style={{ display: 'grid', gap: 6 }}>
-        <p className="section-eyebrow">Comment ça marche</p>
-        <p style={{ margin: 0 }}>
-          1️⃣ Tu choisis un pilote et tu indiques ta mise.<br />
-          2️⃣ Ton pari apparaît côté organisateur en <strong>« en attente de paiement »</strong>.<br />
-          3️⃣ Tu vas voir l'organisateur, tu payes en jeu (cash ou virement) et il valide.<br />
-          4️⃣ Si <strong>ton pilote gagne</strong>, tu récupères ta mise + une part du pot des perdants (au prorata de ta mise). L'organisateur prend {race.betOrgaCutPercent} %.
-        </p>
+      {/* Pot en jeu */}
+      <div className="bet-pool">
+        <div>
+          <p className="section-eyebrow">Pot des paris payés</p>
+          <p className="muted" style={{ margin: '4px 0 0', fontSize: '0.85rem' }}>
+            Part organisation : {race.betOrgaCutPercent} % · le reste est partagé entre les gagnants.
+          </p>
+        </div>
+        <span className="money money-big">{formatMoney(totalPool)}</span>
       </div>
 
       {/* Pilotes + cotes */}
-      <div className="panel" style={{ display: 'grid', gap: 10 }}>
+      <div className="panel" style={{ display: 'grid', gap: 12 }}>
         <p className="section-eyebrow">Pilotes en piste</p>
-        {totalPool > 0 && (
-          <p className="muted" style={{ margin: 0, fontSize: '0.85rem' }}>
-            Pot des paris payés : <strong>{formatMoney(totalPool)}</strong>.
-          </p>
-        )}
-        <div className="grid" style={{ gap: 6 }}>
+        <div className="pilot-list">
           {pilots.length === 0 && <p className="muted">Aucun pilote inscrit pour l'instant.</p>}
           {pilots.map((p) => {
             const stake = totalsByPilot[p.id] || 0;
             const share = totalPool > 0 ? Math.round((stake / totalPool) * 100) : 0;
             const isWinner = race.winnerPilotId === p.id;
+            const isSelected = pilotId === p.id;
             return (
-              <div key={p.id} className="between" style={{ padding: '8px 10px', borderRadius: 6, background: isWinner ? 'rgba(255,215,0,0.12)' : 'rgba(255,255,255,0.03)' }}>
-                <div>
-                  <strong>{p.pseudo}</strong>{isWinner && ' 🏆'}
-                  {p.vehicle && <div className="muted" style={{ fontSize: '0.8rem' }}>{p.vehicle}</div>}
+              <button
+                key={p.id}
+                type="button"
+                className={`pilot-row ${isSelected ? 'is-selected' : ''} ${isWinner ? 'is-winner' : ''}`}
+                style={{ textAlign: 'left', cursor: bettingOpen ? 'pointer' : 'default', width: '100%' }}
+                onClick={() => bettingOpen && setPilotId(p.id)}
+                disabled={!bettingOpen}
+              >
+                <div className="pr-top">
+                  <div>
+                    <div className="pr-name">{p.pseudo}{isWinner && ' 🏆'}</div>
+                    {p.vehicle && <div className="pr-vehicle">{p.vehicle}</div>}
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div className="money">{formatMoney(stake)}</div>
+                    {totalPool > 0 && <div className="pr-share">{share}% du pot</div>}
+                  </div>
                 </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontFamily: 'monospace' }}>{formatMoney(stake)}</div>
-                  {totalPool > 0 && <div className="muted" style={{ fontSize: '0.75rem' }}>{share}% du pot</div>}
-                </div>
-              </div>
+                <div className="odds-bar"><span style={{ width: `${Math.max(share, totalPool > 0 ? 3 : 0)}%` }} /></div>
+              </button>
             );
           })}
         </div>
       </div>
 
+      {/* Comment ça marche */}
+      <div className="panel" style={{ display: 'grid', gap: 12 }}>
+        <p className="section-eyebrow">Comment ça marche</p>
+        <ol className="steps">
+          <li><span className="step-n">1</span><span>Choisis un pilote ci-dessus et indique ta mise.</span></li>
+          <li><span className="step-n">2</span><span>Ton pari apparaît côté orga en <strong>« en attente de paiement »</strong>.</span></li>
+          <li><span className="step-n">3</span><span>Tu payes en jeu (cash ou virement), l'organisateur valide ton ticket.</span></li>
+          <li><span className="step-n">4</span><span>Si <strong>ton pilote gagne</strong>, tu récupères ta mise + une part du pot des perdants, au prorata. L'orga prend {race.betOrgaCutPercent} %.</span></li>
+        </ol>
+      </div>
+
       {/* Formulaire de pari */}
-      {race.bettingStatus === 'open' && pilots.length > 0 ? (
+      {bettingOpen ? (
         success ? (
           <div className="panel grid">
             <span className="badge ok"><CheckCircle2 size={14} /> Pari enregistré</span>
-            <h2 style={{ margin: '4px 0' }}>{formatMoney(success.amount)} sur {success.pilotPseudo}</h2>
-            <p>Ton pari est <strong>en attente de paiement</strong>. Va voir l'organisateur pour payer (cash ou virement), il validera ton ticket. Tant qu'il n'est pas validé, il ne compte pas dans le pot.</p>
+            <h2 style={{ margin: '4px 0' }}>
+              <span className="money">{formatMoney(success.amount)}</span> sur {success.pilotPseudo}
+            </h2>
+            <p className="notice" style={{ margin: 0 }}>
+              Ton pari est <strong>en attente de paiement</strong>. Va voir l'organisateur pour payer ; tant qu'il n'est pas validé, il ne compte pas dans le pot.
+            </p>
             <div className="actions">
               <button className="button" onClick={() => setSuccess(null)}>Parier à nouveau</button>
               <Link className="button ghost" to="/"><ArrowLeft size={14} /> Accueil</Link>
@@ -148,7 +169,7 @@ export default function RaceBetPage() {
                 </select>
               </label>
               <label className="field">
-                <span className="label">Ta mise ($)</span>
+                <span className="label">Ta mise</span>
                 <input className="input" type="number" min="1" step="1000" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Ex : 50000" />
               </label>
               {error && <p className="error">{error}</p>}
