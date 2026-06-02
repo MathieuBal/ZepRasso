@@ -4,7 +4,7 @@ import PageHeader from '../components/PageHeader';
 import VehicleCard from '../components/VehicleCard';
 import { getStoredPseudo } from '../lib/localSession';
 import { getEvent, getVehicles, getVotes } from '../lib/repository';
-import { calculateVehicleScores, findUserVote } from '../lib/scoring';
+import { calculateVehicleScores, findUserVote, isOwnVehicle } from '../lib/scoring';
 import { usePolling } from '../lib/usePolling';
 import type { Vehicle, VehicleScore, Vote } from '../types';
 
@@ -14,7 +14,7 @@ export default function VehiclesPage() {
   const pseudo = getStoredPseudo();
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [votes, setVotes] = useState<Vote[]>([]);
-  const [votesClosed, setVotesClosed] = useState(false);
+  const [canVote, setCanVote] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'todo' | 'done'>('all');
@@ -29,7 +29,7 @@ export default function VehiclesPage() {
     Promise.all([getEvent(), getVehicles(), getVotes()])
       .then(([event, loadedVehicles, loadedVotes]) => {
         if (!mountedRef.current) return;
-        setVotesClosed(event.status === 'closed');
+        setCanVote(event.status === 'voting');
         setVehicles(loadedVehicles);
         setVotes(loadedVotes);
         setError(null);
@@ -52,13 +52,17 @@ export default function VehiclesPage() {
     return map;
   }, [vehicles, votes]);
 
-  const votedCount = vehicles.filter((v) => findUserVote(votes, v.id, pseudo)).length;
-  const progressPct = vehicles.length > 0
-    ? Math.round((votedCount / vehicles.length) * 100)
+  // Le propre véhicule du participant ne compte pas : il ne peut pas voter dessus,
+  // donc on l'exclut de la progression (sinon impossible d'atteindre 100%).
+  const votableVehicles = vehicles.filter((v) => !isOwnVehicle(v, pseudo));
+  const votedCount = votableVehicles.filter((v) => findUserVote(votes, v.id, pseudo)).length;
+  const progressPct = votableVehicles.length > 0
+    ? Math.round((votedCount / votableVehicles.length) * 100)
     : 0;
 
   const visible = vehicles.filter((v) => {
     if (filter === 'all') return true;
+    if (isOwnVehicle(v, pseudo)) return false; // jamais dans "à noter" ni "votés"
     const voted = Boolean(findUserVote(votes, v.id, pseudo));
     return filter === 'done' ? voted : !voted;
   });
@@ -70,14 +74,14 @@ export default function VehiclesPage() {
         badge={pseudo ? `Pseudo : ${pseudo}` : 'Pseudo requis'}
         badgeTone={pseudo ? 'ok' : 'wait'}
       >
-        {votesClosed ? (
-          <p className="notice">Les votes sont fermés. Découvre le <Link to="/results"><strong>classement final</strong></Link>.</p>
+        {!canVote ? (
+          <p className="notice">Les votes ne sont pas ouverts pour l'instant. Découvre le <Link to="/results"><strong>classement</strong></Link>.</p>
         ) : pseudo ? (
           <>
             <p className="lead" style={{ marginBottom: 12 }}>
-              {votedCount === vehicles.length && vehicles.length > 0
+              {votedCount === votableVehicles.length && votableVehicles.length > 0
                 ? 'Tu as voté pour tous les véhicules. Tu peux encore modifier tes notes.'
-                : `Tu as voté pour ${votedCount}/${vehicles.length} véhicules.`}
+                : `Tu as voté pour ${votedCount}/${votableVehicles.length} véhicules.`}
             </p>
             <div className="between" style={{ gap: 14 }}>
               <div style={{ flex: 1, minWidth: 200 }}>
@@ -100,7 +104,7 @@ export default function VehiclesPage() {
       <div className="actions" role="tablist" aria-label="Filtre véhicules">
         {([
           ['all',  `Tous (${vehicles.length})`],
-          ['todo', `À noter (${vehicles.length - votedCount})`],
+          ['todo', `À noter (${votableVehicles.length - votedCount})`],
           ['done', `Votés (${votedCount})`],
         ] as const).map(([value, label]) => (
           <button
@@ -138,6 +142,7 @@ export default function VehiclesPage() {
               key={vehicle.id}
               vehicle={vehicle}
               hasVoted={Boolean(findUserVote(votes, vehicle.id, pseudo))}
+              isOwn={isOwnVehicle(vehicle, pseudo)}
               averageScore={score?.average}
               voteCount={score?.voteCount}
             />

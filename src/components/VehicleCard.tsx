@@ -1,27 +1,25 @@
-import { CheckCircle2, Circle } from 'lucide-react';
+import { CheckCircle2, Circle, UserRound } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { Vehicle } from '../types';
 
 type VehicleCardProps = {
   vehicle: Vehicle;
   hasVoted?: boolean;
+  /** Le pseudo connecté correspond au propriétaire : on désactive le vote. */
+  isOwn?: boolean;
   /** Note moyenne déjà calculée pour ce véhicule (optionnel). */
   averageScore?: number;
   /** Nombre de votes (optionnel). */
   voteCount?: number;
 };
 
-/**
- * Layout dense en "row" : photo gauche, méta centre, note + statut droite.
- * Cliquable en entier — emmène vers /vehicles/:id pour voter / éditer le vote.
- */
-export default function VehicleCard({ vehicle, hasVoted = false, averageScore, voteCount }: VehicleCardProps) {
+export default function VehicleCard({ vehicle, hasVoted = false, isOwn = false, averageScore, voteCount }: VehicleCardProps) {
   const thumb = vehicle.imageUrl
     ? { backgroundImage: `url(${vehicle.imageUrl})` }
     : undefined;
 
-  return (
-    <Link className="vehicle-row" to={`/vehicles/${vehicle.id}`}>
+  const content = (
+    <>
       <div className="v-thumb" style={thumb} />
       <div className="v-meta">
         <div className="v-tags">
@@ -33,7 +31,9 @@ export default function VehicleCard({ vehicle, hasVoted = false, averageScore, v
         <div className="v-owner">par <strong style={{ color: 'var(--text-2)' }}>{vehicle.ownerName}</strong></div>
       </div>
       <div className="v-right">
-        {hasVoted ? (
+        {isOwn ? (
+          <span className="badge wait"><UserRound size={12} /> Ton véhicule</span>
+        ) : hasVoted ? (
           <span className="badge ok"><CheckCircle2 size={12} /> Voté</span>
         ) : (
           <span className="badge wait"><Circle size={12} /> À noter</span>
@@ -46,6 +46,11 @@ export default function VehicleCard({ vehicle, hasVoted = false, averageScore, v
           <div className="mono" style={{ fontSize: '0.7rem', color: 'var(--text-3)' }}>{voteCount} votes</div>
         )}
       </div>
-    </Link>
+    </>
   );
+
+  if (isOwn) {
+    return <div className="vehicle-row" style={{ opacity: 0.75, cursor: 'default' }}>{content}</div>;
+  }
+  return <Link className="vehicle-row" to={`/vehicles/${vehicle.id}`}>{content}</Link>;
 }

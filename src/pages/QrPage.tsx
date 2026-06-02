@@ -3,7 +3,7 @@ import { QRCodeCanvas, QRCodeSVG } from 'qrcode.react';
 import { useEffect, useRef, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { isAdminUnlocked } from '../lib/localSession';
-import { getNetwork } from '../lib/repository';
+import { getEvent, getNetwork } from '../lib/repository';
 
 const TRANSPARENT = 'rgba(0,0,0,0)';
 const EXPORT_SIZE = 1024;
@@ -25,6 +25,9 @@ export default function QrPage() {
   const [mode, setMode] = useState<'public' | 'origin' | 'lan' | 'no-lan'>(
     isLocalhost() ? 'no-lan' : 'origin',
   );
+  // Cible du QR : page d'accueil (vote) ou page d'inscription. Pré-réglé sur
+  // l'inscription quand l'événement est en phase « inscriptions ».
+  const [target, setTarget] = useState<'home' | 'register'>('home');
 
   useEffect(() => {
     let cancelled = false;
@@ -49,8 +52,14 @@ export default function QrPage() {
         }
       })
       .catch(() => { if (isLocalhost() && !cancelled) setMode('no-lan'); });
+    getEvent()
+      .then((event) => { if (!cancelled && event.status === 'registrations') setTarget('register'); })
+      .catch(() => { /* on garde la cible accueil par défaut */ });
     return () => { cancelled = true; };
   }, []);
+
+  // shareUrl finit toujours par "/", donc on suffixe directement.
+  const qrUrl = target === 'register' ? `${shareUrl}register` : shareUrl;
 
   function downloadPng(ref: React.RefObject<HTMLCanvasElement | null>, suffix: string) {
     const canvas = ref.current;
@@ -68,7 +77,12 @@ export default function QrPage() {
       <div className="card grid qr-card">
         <span className="badge ok">Accès au vote</span>
         <h1 className="page-title gradient-text">Inviter les participants</h1>
-        <p className="lead">Partage le lien ci-dessous (Discord, salon vocal…) ou diffuse ce QR code. Les participants l’ouvrent, entrent leur pseudo RP, puis votent.</p>
+        <p className="lead">Partage le lien ci-dessous (Discord, salon vocal…) ou diffuse ce QR code. Les participants l’ouvrent, {target === 'register' ? "s'inscrivent au concours" : 'entrent leur pseudo RP, puis votent'}.</p>
+
+        <div className="actions" role="tablist" aria-label="Cible du QR code">
+          <button type="button" role="tab" aria-selected={target === 'home'} className={`nav-link ${target === 'home' ? 'active' : ''}`} onClick={() => setTarget('home')}>QR accueil / vote</button>
+          <button type="button" role="tab" aria-selected={target === 'register'} className={`nav-link ${target === 'register' ? 'active' : ''}`} onClick={() => setTarget('register')}>QR inscription</button>
+        </div>
 
         {mode === 'public' && (
           <p className="notice">
@@ -87,10 +101,10 @@ export default function QrPage() {
         )}
 
         <div className="qr-frame">
-          <QRCodeSVG value={shareUrl} size={260} level="M" marginSize={2} />
+          <QRCodeSVG value={qrUrl} size={260} level="M" marginSize={2} />
         </div>
 
-        <p className="muted qr-url">{shareUrl}</p>
+        <p className="muted qr-url">{qrUrl}</p>
 
         <div className="actions">
           <button className="button primary" onClick={() => downloadPng(darkRef, 'noir')}><Download size={16} /> PNG fond transparent (noir)</button>
@@ -101,8 +115,8 @@ export default function QrPage() {
       </div>
 
       <div className="qr-export-hidden" aria-hidden="true">
-        <QRCodeCanvas ref={darkRef} value={shareUrl} size={EXPORT_SIZE} level="M" marginSize={2} bgColor={TRANSPARENT} fgColor="#000000" />
-        <QRCodeCanvas ref={lightRef} value={shareUrl} size={EXPORT_SIZE} level="M" marginSize={2} bgColor={TRANSPARENT} fgColor="#ffffff" />
+        <QRCodeCanvas ref={darkRef} value={qrUrl} size={EXPORT_SIZE} level="M" marginSize={2} bgColor={TRANSPARENT} fgColor="#000000" />
+        <QRCodeCanvas ref={lightRef} value={qrUrl} size={EXPORT_SIZE} level="M" marginSize={2} bgColor={TRANSPARENT} fgColor="#ffffff" />
       </div>
     </section>
   );

@@ -4,6 +4,7 @@ const PSEUDO_KEY = 'zeprasso_voter_pseudo';
 const ADMIN_KEY = 'zeprasso_admin_unlocked';
 const ADMIN_CODE_KEY = 'zeprasso_admin_code';
 const VOTER_ID_KEY = 'zeprasso_voter_id';
+const PARTICIPANT_ID_KEY = 'zeprasso_participant_id';
 
 export function getVoterId(): string {
   let id = safeStorage.getItem(VOTER_ID_KEY);
@@ -24,6 +25,20 @@ export function setStoredPseudo(pseudo: string): void {
 
 export function clearStoredPseudo(): void {
   safeStorage.removeItem(PSEUDO_KEY);
+}
+
+// Mémorise que cet appareil s'est inscrit au concours (le deviceToken d'inscription
+// est getVoterId()). Sert à afficher « tu es inscrit » et son propre véhicule.
+export function getParticipantId(): string | null {
+  return safeStorage.getItem(PARTICIPANT_ID_KEY);
+}
+
+export function setParticipantId(id: string): void {
+  safeStorage.setItem(PARTICIPANT_ID_KEY, id);
+}
+
+export function clearParticipantId(): void {
+  safeStorage.removeItem(PARTICIPANT_ID_KEY);
 }
 
 export function isAdminUnlocked(): boolean {

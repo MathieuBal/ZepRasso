@@ -2,25 +2,39 @@ import { Download, QrCode, RefreshCw, Shield, Trash2, Upload } from 'lucide-reac
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import ImagePicker from '../components/ImagePicker';
+import LotteriesPanel from '../components/LotteriesPanel';
 import PageHeader from '../components/PageHeader';
+import RacesPanel from '../components/RacesPanel';
 import ResultsTable from '../components/ResultsTable';
 import { getAdminCode, isAdminUnlocked, lockAdmin, unlockAdmin } from '../lib/localSession';
 import {
   addVehicle,
+  deleteParticipant,
   deleteVehicle,
   downloadBackup,
   getAudit,
   getEvent,
+  getParticipants,
   getVehicles,
   getVotes,
   resetVotes,
   restoreBackup,
   toggleVehicleDisqualification,
   updateEvent,
+  updateParticipant,
   verifyAdminCode,
 } from '../lib/repository';
 import { calculateVehicleScores } from '../lib/scoring';
-import type { AuditReport, RassoEvent, Vehicle, Vote } from '../types';
+import { computePrizePool } from '../lib/prizePool';
+import { formatMoney } from '../lib/money';
+import type { AuditReport, EventStatus, Participant, PaymentMethod, RassoEvent, Vehicle, Vote } from '../types';
+
+const STATUS_LABEL: Record<EventStatus, string> = {
+  draft: 'Brouillon',
+  registrations: 'Inscriptions ouvertes',
+  voting: 'Votes ouverts',
+  closed: 'Clôturé',
+};
 
 const initialForm = {
   name: '',
@@ -40,25 +54,44 @@ export default function AdminPage() {
   const [eventName, setEventName] = useState('');
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [votes, setVotes] = useState<Vote[]>([]);
+  const [participants, setParticipants] = useState<Participant[]>([]);
   const [audit, setAudit] = useState<AuditReport | null>(null);
   const [form, setForm] = useState(initialForm);
+  const [selectedParticipantId, setSelectedParticipantId] = useState('');
+  const [entryFeeInput, setEntryFeeInput] = useState('');
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const backupInputRef = useRef<HTMLInputElement>(null);
   const scores = useMemo(() => calculateVehicleScores(vehicles, votes), [vehicles, votes]);
+  const paidCount = participants.filter((p) => p.hasPaid).length;
+  const entryFee = rassoEvent?.entryFee ?? 0;
+  const prize = useMemo(() => computePrizePool(paidCount, entryFee), [paidCount, entryFee]);
+  // Participants déjà rattachés à un véhicule (pour l'avertissement "soft").
+  const linkedParticipantIds = useMemo(
+    () => new Set(vehicles.map((v) => v.participantId).filter(Boolean) as string[]),
+    [vehicles],
+  );
+  const vehicleByParticipant = useMemo(() => {
+    const map = new Map<string, Vehicle>();
+    vehicles.forEach((v) => { if (v.participantId) map.set(v.participantId, v); });
+    return map;
+  }, [vehicles]);
 
   async function refresh() {
-    const [loadedEvent, loadedVehicles, loadedVotes, loadedAudit] = await Promise.all([
+    const [loadedEvent, loadedVehicles, loadedVotes, loadedAudit, loadedParticipants] = await Promise.all([
       getEvent(),
       getVehicles(),
       getVotes(),
       getAudit(),
+      getParticipants(),
     ]);
     setRassoEvent(loadedEvent);
     setEventName(loadedEvent.name);
+    setEntryFeeInput(String(loadedEvent.entryFee ?? 0));
     setVehicles(loadedVehicles);
     setVotes(loadedVotes);
     setAudit(loadedAudit);
+    setParticipants(loadedParticipants);
   }
 
   useEffect(() => {
@@ -125,35 +158,73 @@ export default function AdminPage() {
     }, 'Nom de l\'événement mis à jour.');
   }
 
-  async function handleToggleStatus() {
-    if (!rassoEvent) return;
-    const next = rassoEvent.status === 'closed' ? 'open' : 'closed';
-    if (next === 'closed' && !confirm('Fermer les votes ? Les visiteurs ne pourront plus voter et le classement devient définitif.')) return;
+  async function changeStatus(next: EventStatus, confirmMessage?: string) {
+    if (confirmMessage && !confirm(confirmMessage)) return;
     await run(async () => {
       await updateEvent({ status: next });
       await refresh();
-    }, next === 'closed' ? 'Votes fermés.' : 'Votes rouverts.');
+    }, `Phase : ${STATUS_LABEL[next]}.`);
+  }
+
+  async function handleSaveEntryFee(formEvent: React.FormEvent) {
+    formEvent.preventDefault();
+    const value = Number(entryFeeInput);
+    if (!Number.isFinite(value) || value < 0) {
+      setError('Le prix d\'inscription doit être un nombre positif.');
+      return;
+    }
+    await run(async () => {
+      await updateEvent({ entryFee: value });
+      await refresh();
+    }, 'Prix d\'inscription mis à jour.');
+  }
+
+  async function handleTogglePaid(participant: Participant) {
+    await run(async () => {
+      await updateParticipant(participant.id, { hasPaid: !participant.hasPaid });
+      await refresh();
+    });
+  }
+
+  async function handlePaymentMethod(participant: Participant, method: PaymentMethod | null) {
+    await run(async () => {
+      await updateParticipant(participant.id, { paymentMethod: method });
+      await refresh();
+    });
+  }
+
+  async function handleDeleteParticipant(participant: Participant) {
+    if (!confirm(`Retirer l'inscription de ${participant.pseudo} ? Son véhicule éventuel n'est pas supprimé.`)) return;
+    await run(async () => {
+      await deleteParticipant(participant.id);
+      await refresh();
+    }, 'Inscription retirée.');
   }
 
   async function handleAddVehicle(event: React.FormEvent) {
     event.preventDefault();
     setError(null);
-    if (!form.name.trim() || !form.ownerName.trim()) {
-      setError('Nom du véhicule et propriétaire sont obligatoires.');
+    // Si un participant inscrit est sélectionné, son pseudo sert de propriétaire.
+    const linked = participants.find((p) => p.id === selectedParticipantId);
+    const ownerName = linked ? linked.pseudo : form.ownerName.trim();
+    if (!form.name.trim() || !ownerName) {
+      setError('Nom du véhicule et propriétaire (ou participant) sont obligatoires.');
       return;
     }
     await run(async () => {
       await addVehicle({
         name: form.name.trim(),
-        ownerName: form.ownerName.trim(),
+        ownerName,
         category: form.category.trim(),
         plate: form.plate.trim() || undefined,
         imageUrl: form.imageUrl.trim() || undefined,
         description: form.description.trim() || undefined,
         isContestant: form.isContestant,
         isDisqualified: form.isDisqualified,
+        participantId: linked ? linked.id : undefined,
       });
       setForm(initialForm);
+      setSelectedParticipantId('');
       await refresh();
     }, 'Véhicule ajouté.');
   }
@@ -276,10 +347,11 @@ export default function AdminPage() {
             <p className="section-eyebrow">Événement</p>
             <h2>{rassoEvent?.name || 'Rasso'}</h2>
           </div>
-          <span className={rassoEvent?.status === 'closed' ? 'badge closed' : 'badge ok'}>
-            {rassoEvent?.status === 'closed' ? 'Votes fermés' : 'Votes ouverts'}
+          <span className={rassoEvent?.status === 'closed' ? 'badge closed' : rassoEvent?.status === 'voting' ? 'badge ok' : 'badge wait'}>
+            {rassoEvent ? STATUS_LABEL[rassoEvent.status] : '—'}
           </span>
         </div>
+
         <form className="form" onSubmit={handleRenameEvent}>
           <label className="field">
             <span className="label">Nom de l'événement</span>
@@ -287,12 +359,45 @@ export default function AdminPage() {
           </label>
           <div className="actions">
             <button className="button" type="submit">Renommer</button>
-            <button className="button primary" type="button" onClick={handleToggleStatus}>
-              {rassoEvent?.status === 'closed' ? 'Rouvrir les votes' : 'Fermer les votes'}
-            </button>
           </div>
         </form>
-        <p className="muted">Quand les votes sont fermés, les participants ne peuvent plus voter et le classement devient définitif.</p>
+
+        <hr className="divider" />
+        <p className="section-eyebrow">Phase de l'événement</p>
+        <p className="muted" style={{ marginTop: -4 }}>
+          Brouillon → Inscriptions → Votes → Clôturé. Les inscriptions ne sont possibles qu'en phase « Inscriptions », les votes qu'en phase « Votes ».
+        </p>
+        <div className="actions">
+          {rassoEvent?.status === 'draft' && (
+            <button className="button primary" type="button" onClick={() => changeStatus('registrations')}>Ouvrir les inscriptions</button>
+          )}
+          {rassoEvent?.status === 'registrations' && (
+            <>
+              <button className="button primary" type="button" onClick={() => changeStatus('voting', 'Fermer les inscriptions et ouvrir les votes ?')}>Fermer inscriptions → ouvrir votes</button>
+              <button className="button ghost" type="button" onClick={() => changeStatus('draft', 'Revenir en brouillon ? Les inscriptions seront fermées.')}>Revenir en brouillon</button>
+            </>
+          )}
+          {rassoEvent?.status === 'voting' && (
+            <>
+              <button className="button primary" type="button" onClick={() => changeStatus('closed', 'Clôturer l\'événement ? Les votes seront définitifs.')}>Clôturer l'événement</button>
+              <button className="button ghost" type="button" onClick={() => changeStatus('registrations', 'Rouvrir les inscriptions ? Les votes seront suspendus.')}>Rouvrir les inscriptions</button>
+            </>
+          )}
+          {rassoEvent?.status === 'closed' && (
+            <button className="button" type="button" onClick={() => changeStatus('voting', 'Rouvrir les votes ?')}>Rouvrir les votes</button>
+          )}
+        </div>
+
+        <hr className="divider" />
+        <form className="form" onSubmit={handleSaveEntryFee}>
+          <label className="field">
+            <span className="label">Prix d'inscription ($)</span>
+            <input className="input" type="number" min="0" step="1000" value={entryFeeInput} onChange={(e) => setEntryFeeInput(e.target.value)} placeholder="Ex : 100000" />
+          </label>
+          <div className="actions">
+            <button className="button" type="submit">Enregistrer le tarif</button>
+          </div>
+        </form>
       </div>
 
       <div className="grid two">
@@ -300,8 +405,24 @@ export default function AdminPage() {
           <p className="section-eyebrow">Inscription</p>
           <h2>Ajouter un véhicule</h2>
           <form className="form" onSubmit={handleAddVehicle}>
+            <label className="field">
+              <span className="label">Participant inscrit</span>
+              <select className="input" value={selectedParticipantId} onChange={(e) => setSelectedParticipantId(e.target.value)}>
+                <option value="">— Aucun (propriétaire libre) —</option>
+                {participants.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.pseudo}{linkedParticipantIds.has(p.id) ? ' (a déjà un véhicule)' : ''}{p.hasPaid ? '' : ' · non payé'}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {selectedParticipantId && linkedParticipantIds.has(selectedParticipantId) && (
+              <p className="notice">Ce participant a déjà un véhicule rattaché. Tu peux quand même en ajouter un second.</p>
+            )}
             <label className="field"><span className="label">Nom du véhicule *</span><input className="input" required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
-            <label className="field"><span className="label">Propriétaire *</span><input className="input" required value={form.ownerName} onChange={(e) => setForm({ ...form, ownerName: e.target.value })} /></label>
+            {!selectedParticipantId && (
+              <label className="field"><span className="label">Propriétaire *</span><input className="input" value={form.ownerName} onChange={(e) => setForm({ ...form, ownerName: e.target.value })} /></label>
+            )}
             <label className="field"><span className="label">Catégorie</span><input className="input" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} placeholder="JDM, Sportive, Luxe..." /></label>
             <label className="field"><span className="label">Plaque</span><input className="input" value={form.plate} onChange={(e) => setForm({ ...form, plate: e.target.value })} /></label>
             <ImagePicker value={form.imageUrl || undefined} onChange={(value) => setForm({ ...form, imageUrl: value || '' })} />
@@ -332,7 +453,70 @@ export default function AdminPage() {
       </div>
 
       <div className="panel grid">
-        <p className="section-eyebrow">Participants</p>
+        <p className="section-eyebrow">Inscriptions</p>
+        <h2>Participants & paiements</h2>
+        <div className="actions">
+          <span className="badge wait">{participants.length} inscrit{participants.length > 1 ? 's' : ''}</span>
+          <span className="badge ok">{paidCount} payé{paidCount > 1 ? 's' : ''}</span>
+          <span className="badge ok">Cagnotte : {formatMoney(prize.pool)}</span>
+          <span className="badge wait">Part orga (10 %) : {formatMoney(prize.orgaCut)}</span>
+        </div>
+        <p className="muted" style={{ marginTop: -4 }}>
+          Répartition du net ({formatMoney(prize.net)}) sur le podium :
+          {' '}🥇 {formatMoney(prize.podium.first)} · 🥈 {formatMoney(prize.podium.second)} · 🥉 {formatMoney(prize.podium.third)}.
+          {scores.length > 0 && (
+            <>
+              {' '}Actuellement :
+              {scores[0] && <> 🥇 <strong>{scores[0].vehicle.name}</strong></>}
+              {scores[1] && <> · 🥈 <strong>{scores[1].vehicle.name}</strong></>}
+              {scores[2] && <> · 🥉 <strong>{scores[2].vehicle.name}</strong></>}.
+            </>
+          )}
+        </p>
+        {participants.length === 0 ? (
+          <p className="muted">Aucune inscription pour l'instant. Ouvre la phase « Inscriptions » pour que les concurrents s'inscrivent.</p>
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>Pseudo</th><th>Contact</th><th>Véhicule</th><th>Payé</th><th>Moyen</th><th></th></tr></thead>
+              <tbody>
+                {participants.map((p) => {
+                  const linkedVehicle = vehicleByParticipant.get(p.id);
+                  return (
+                    <tr key={p.id}>
+                      <td><strong>{p.pseudo}</strong></td>
+                      <td>{p.contactInfo || <span className="muted">—</span>}</td>
+                      <td>{linkedVehicle ? linkedVehicle.name : <span className="muted">non rattaché</span>}</td>
+                      <td>
+                        <button className={p.hasPaid ? 'button ok' : 'button ghost'} onClick={() => handleTogglePaid(p)}>
+                          {p.hasPaid ? '✓ Payé' : 'Non payé'}
+                        </button>
+                      </td>
+                      <td>
+                        <select
+                          className="input"
+                          value={p.paymentMethod || ''}
+                          onChange={(e) => handlePaymentMethod(p, (e.target.value || null) as PaymentMethod | null)}
+                        >
+                          <option value="">—</option>
+                          <option value="cash">Cash</option>
+                          <option value="virement">Virement</option>
+                        </select>
+                      </td>
+                      <td className="actions">
+                        <button className="button danger" onClick={() => handleDeleteParticipant(p)}>Retirer</button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <div className="panel grid">
+        <p className="section-eyebrow">Véhicules</p>
         <h2>Véhicules inscrits</h2>
         <div className="table-wrap">
           <table>
@@ -411,6 +595,16 @@ export default function AdminPage() {
           <p className="muted">Rien à signaler.</p>
         )}
       </div>
+
+      <LotteriesPanel
+        onMessage={(t) => { setError(null); setMessage(t); }}
+        onError={(t) => { setMessage(null); setError(t); }}
+      />
+
+      <RacesPanel
+        onMessage={(t) => { setError(null); setMessage(t); }}
+        onError={(t) => { setMessage(null); setError(t); }}
+      />
     </section>
   );
 }
