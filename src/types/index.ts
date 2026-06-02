@@ -29,6 +29,43 @@ export type PrizePool = {
   podium: { first: number; second: number; third: number };
 };
 
+export type LotteryStatus = 'open' | 'closed' | 'drawn';
+
+export type Lottery = {
+  id: string;
+  name: string;
+  prizeDescription?: string;
+  prizeImageUrl?: string;
+  ticketPrice: number;
+  maxTicketsPerBuyer: number;
+  status: LotteryStatus;
+  winnerEntryNumber?: number;
+  winnerEntryId?: string;
+  createdAt: string;
+};
+
+export type LotteryEntry = {
+  id: string;
+  lotteryId: string;
+  entryNumber: number;
+  firstName: string;
+  lastName: string;
+  phone?: string;
+  ticketCount: number;
+  hasPaid: boolean;
+  paymentMethod?: PaymentMethod;
+  note?: string;
+  createdAt: string;
+};
+
+export type LotteryStats = {
+  totalEntries: number;
+  paidEntries: number;
+  totalTickets: number;
+  paidTickets: number;
+  revenue: number;
+};
+
 export type Vehicle = {
   id: string;
   eventId: string;

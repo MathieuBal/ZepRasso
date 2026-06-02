@@ -1,5 +1,5 @@
 import { getAdminCode, getVoterId } from './localSession';
-import type { AuditReport, Participant, PaymentMethod, PrizePool, RassoEvent, Vehicle, Vote, VoteInput } from '../types';
+import type { AuditReport, Lottery, LotteryEntry, LotteryStats, Participant, PaymentMethod, PrizePool, RassoEvent, Vehicle, Vote, VoteInput } from '../types';
 
 export const EVENT_ID = 'rasso';
 
@@ -152,4 +152,73 @@ export async function restoreBackup(data: unknown): Promise<{ vehicles: number; 
 
 export function getAudit(): Promise<AuditReport> {
   return api<AuditReport>('/admin/audit', { headers: adminHeaders() });
+}
+
+// ─── Loteries (admin) ────────────────────────────────────────────────────────
+
+export function getLotteries(): Promise<Lottery[]> {
+  return api<Lottery[]>('/lotteries', { headers: adminHeaders() });
+}
+
+export type LotteryCreate = {
+  name: string;
+  prizeDescription?: string;
+  prizeImageUrl?: string;
+  ticketPrice: number;
+  maxTicketsPerBuyer: number;
+};
+
+export function createLottery(input: LotteryCreate): Promise<Lottery> {
+  return api<Lottery>('/lotteries', { method: 'POST', headers: adminHeaders(), body: JSON.stringify(input) });
+}
+
+export function updateLottery(id: string, patch: Partial<LotteryCreate> & { status?: Lottery['status'] }): Promise<Lottery> {
+  return api<Lottery>(`/lotteries/${id}`, { method: 'PATCH', headers: adminHeaders(), body: JSON.stringify(patch) });
+}
+
+export async function deleteLottery(id: string): Promise<void> {
+  await api(`/lotteries/${id}`, { method: 'DELETE', headers: adminHeaders() });
+}
+
+export function getLotteryEntries(id: string): Promise<{ lottery: Lottery; entries: LotteryEntry[]; stats: LotteryStats }> {
+  return api(`/lotteries/${id}/entries`, { headers: adminHeaders() });
+}
+
+export type LotteryEntryInput = {
+  firstName: string;
+  lastName: string;
+  phone?: string;
+  ticketCount: number;
+  hasPaid?: boolean;
+  paymentMethod?: PaymentMethod;
+  note?: string;
+};
+
+export function addLotteryEntry(lotteryId: string, input: LotteryEntryInput): Promise<LotteryEntry> {
+  return api<LotteryEntry>(`/lotteries/${lotteryId}/entries`, { method: 'POST', headers: adminHeaders(), body: JSON.stringify(input) });
+}
+
+export type LotteryEntryPatch = Partial<Omit<LotteryEntryInput, 'paymentMethod'>> & { paymentMethod?: PaymentMethod | null };
+
+export function updateLotteryEntry(entryId: string, patch: LotteryEntryPatch): Promise<LotteryEntry> {
+  return api<LotteryEntry>(`/lottery-entries/${entryId}`, { method: 'PATCH', headers: adminHeaders(), body: JSON.stringify(patch) });
+}
+
+export async function deleteLotteryEntry(entryId: string): Promise<void> {
+  await api(`/lottery-entries/${entryId}`, { method: 'DELETE', headers: adminHeaders() });
+}
+
+export function drawLottery(id: string): Promise<{ winner: LotteryEntry }> {
+  return api<{ winner: LotteryEntry }>(`/lotteries/${id}/draw`, { method: 'POST', headers: adminHeaders() });
+}
+
+// Téléchargement direct (admin-headers) du CSV billes.
+export async function downloadMarblesCsv(lotteryId: string): Promise<Blob> {
+  const response = await fetch(`/api/lotteries/${lotteryId}/marbles.csv`, { headers: adminHeaders() });
+  if (!response.ok) {
+    let message = `Erreur réseau (${response.status})`;
+    try { const body = await response.json(); if (body?.error) message = body.error; } catch { /* ignore */ }
+    throw new Error(message);
+  }
+  return response.blob();
 }

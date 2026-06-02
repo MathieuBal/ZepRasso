@@ -7,10 +7,13 @@ import {
   clamp,
   computeAudit,
   defaultDb,
+  computeLotteryStats,
   computePrizePool,
   findExistingVote,
   isOwnVehicle,
   normalizeDb,
+  normalizeLottery,
+  normalizeLotteryEntry,
   normalizeParticipant,
   normalizeVote,
   ownsVehicleByDevice,
@@ -582,6 +585,190 @@ app.delete('/api/participants/:id', requireAdmin, (req, res) => {
   db.participants.splice(index, 1);
   saveDb();
   res.json({ ok: true });
+});
+
+// ─── Loteries (toutes admin) ────────────────────────────────────────────────
+// Chaque loterie a sa numérotation propre, qui ne se réutilise jamais (même
+// après suppression d'une entry) pour éviter qu'un numéro recyclé crée de la
+// confusion au moment du tirage / de l'export billes.
+
+function nextEntryNumber(lotteryId) {
+  let max = 0;
+  for (const e of db.lotteryEntries) {
+    if (e.lotteryId === lotteryId && e.entryNumber > max) max = e.entryNumber;
+  }
+  return max + 1;
+}
+
+app.get('/api/lotteries', requireAdmin, (_req, res) => {
+  res.json(db.lotteries);
+});
+
+app.post('/api/lotteries', requireAdmin, (req, res) => {
+  const body = req.body || {};
+  let prizeImageUrl;
+  try {
+    prizeImageUrl = saveDataUrlPhoto(body.prizeImageUrl);
+  } catch (err) {
+    if (err instanceof PhotoRejected) { res.status(400).json({ error: err.message }); return; }
+    throw err;
+  }
+  const lottery = normalizeLottery({
+    name: body.name,
+    prizeDescription: body.prizeDescription,
+    prizeImageUrl,
+    ticketPrice: body.ticketPrice,
+    maxTicketsPerBuyer: body.maxTicketsPerBuyer,
+    status: 'open',
+  });
+  if (!lottery) { res.status(400).json({ error: 'Nom de la loterie obligatoire.' }); return; }
+  db.lotteries.push(lottery);
+  saveDb();
+  res.json(lottery);
+});
+
+app.patch('/api/lotteries/:id', requireAdmin, (req, res) => {
+  const lottery = db.lotteries.find((l) => l.id === req.params.id);
+  if (!lottery) { res.status(404).json({ error: 'Loterie introuvable.' }); return; }
+  const body = req.body || {};
+  if (typeof body.name === 'string' && body.name.trim()) lottery.name = body.name.trim();
+  if (typeof body.prizeDescription === 'string') lottery.prizeDescription = body.prizeDescription.trim() || undefined;
+  if (typeof body.ticketPrice === 'number' && body.ticketPrice >= 0) lottery.ticketPrice = Math.floor(body.ticketPrice);
+  if (typeof body.maxTicketsPerBuyer === 'number' && body.maxTicketsPerBuyer >= 1) lottery.maxTicketsPerBuyer = Math.floor(body.maxTicketsPerBuyer);
+  if (['open', 'closed', 'drawn'].includes(body.status)) lottery.status = body.status;
+  if (typeof body.prizeImageUrl === 'string' && body.prizeImageUrl.startsWith('data:')) {
+    try {
+      const photo = saveDataUrlPhoto(body.prizeImageUrl);
+      if (photo) {
+        removePhoto(lottery.prizeImageUrl);
+        lottery.prizeImageUrl = photo;
+      }
+    } catch (err) {
+      if (err instanceof PhotoRejected) { res.status(400).json({ error: err.message }); return; }
+      throw err;
+    }
+  }
+  saveDb();
+  res.json(lottery);
+});
+
+app.delete('/api/lotteries/:id', requireAdmin, (req, res) => {
+  const index = db.lotteries.findIndex((l) => l.id === req.params.id);
+  if (index === -1) { res.status(404).json({ error: 'Loterie introuvable.' }); return; }
+  backupDb('avant-suppression-loterie');
+  removePhoto(db.lotteries[index].prizeImageUrl);
+  db.lotteries.splice(index, 1);
+  // Cascade : les tickets de cette loterie n'ont plus de sens.
+  db.lotteryEntries = db.lotteryEntries.filter((e) => e.lotteryId !== req.params.id);
+  saveDb();
+  res.json({ ok: true });
+});
+
+app.get('/api/lotteries/:id/entries', requireAdmin, (req, res) => {
+  const lottery = db.lotteries.find((l) => l.id === req.params.id);
+  if (!lottery) { res.status(404).json({ error: 'Loterie introuvable.' }); return; }
+  const entries = db.lotteryEntries.filter((e) => e.lotteryId === lottery.id)
+    .sort((a, b) => a.entryNumber - b.entryNumber);
+  res.json({ lottery, entries, stats: computeLotteryStats(entries, lottery.ticketPrice) });
+});
+
+app.post('/api/lotteries/:id/entries', requireAdmin, (req, res) => {
+  const lottery = db.lotteries.find((l) => l.id === req.params.id);
+  if (!lottery) { res.status(404).json({ error: 'Loterie introuvable.' }); return; }
+  if (lottery.status !== 'open') { res.status(403).json({ error: 'Cette loterie n\'accepte plus de nouvelles inscriptions.' }); return; }
+  const body = req.body || {};
+  const ticketCount = Math.max(1, Math.floor(Number(body.ticketCount) || 1));
+  if (ticketCount > lottery.maxTicketsPerBuyer) {
+    res.status(400).json({ error: `Maximum ${lottery.maxTicketsPerBuyer} tickets par personne pour cette loterie.` });
+    return;
+  }
+  const entry = normalizeLotteryEntry({
+    lotteryId: lottery.id,
+    entryNumber: nextEntryNumber(lottery.id),
+    firstName: body.firstName,
+    lastName: body.lastName,
+    phone: body.phone,
+    ticketCount,
+    hasPaid: body.hasPaid,
+    paymentMethod: body.paymentMethod,
+    note: body.note,
+  });
+  if (!entry) { res.status(400).json({ error: 'Nom et prénom obligatoires.' }); return; }
+  db.lotteryEntries.push(entry);
+  saveDb();
+  res.json(entry);
+});
+
+app.patch('/api/lottery-entries/:id', requireAdmin, (req, res) => {
+  const entry = db.lotteryEntries.find((e) => e.id === req.params.id);
+  if (!entry) { res.status(404).json({ error: 'Ticket introuvable.' }); return; }
+  const lottery = db.lotteries.find((l) => l.id === entry.lotteryId);
+  const body = req.body || {};
+  if (typeof body.firstName === 'string' && body.firstName.trim()) entry.firstName = body.firstName.trim();
+  if (typeof body.lastName === 'string' && body.lastName.trim()) entry.lastName = body.lastName.trim();
+  if (typeof body.phone === 'string') entry.phone = body.phone.trim() || undefined;
+  if (typeof body.ticketCount === 'number' && body.ticketCount >= 1) {
+    const max = lottery?.maxTicketsPerBuyer ?? 5;
+    if (body.ticketCount > max) { res.status(400).json({ error: `Maximum ${max} tickets par personne.` }); return; }
+    entry.ticketCount = Math.floor(body.ticketCount);
+  }
+  if (typeof body.hasPaid === 'boolean') entry.hasPaid = body.hasPaid;
+  if (body.paymentMethod === 'cash' || body.paymentMethod === 'virement') entry.paymentMethod = body.paymentMethod;
+  else if (body.paymentMethod === null || body.paymentMethod === '') entry.paymentMethod = undefined;
+  if (typeof body.note === 'string') entry.note = body.note.trim() || undefined;
+  saveDb();
+  res.json(entry);
+});
+
+app.delete('/api/lottery-entries/:id', requireAdmin, (req, res) => {
+  const idx = db.lotteryEntries.findIndex((e) => e.id === req.params.id);
+  if (idx === -1) { res.status(404).json({ error: 'Ticket introuvable.' }); return; }
+  db.lotteryEntries.splice(idx, 1);
+  saveDb();
+  res.json({ ok: true });
+});
+
+// CSV « une ligne par bille » à donner au jeu de course de billes.
+// Colonnes : marble_n, entry_number, first_name, last_name, phone
+app.get('/api/lotteries/:id/marbles.csv', requireAdmin, (req, res) => {
+  const lottery = db.lotteries.find((l) => l.id === req.params.id);
+  if (!lottery) { res.status(404).json({ error: 'Loterie introuvable.' }); return; }
+  const entries = db.lotteryEntries
+    .filter((e) => e.lotteryId === lottery.id && e.hasPaid)
+    .sort((a, b) => a.entryNumber - b.entryNumber);
+  const escape = (v) => `"${String(v ?? '').replaceAll('"', '""')}"`;
+  const rows = [['marble_n', 'entry_number', 'first_name', 'last_name', 'phone']];
+  let marble = 0;
+  for (const e of entries) {
+    for (let i = 0; i < e.ticketCount; i++) {
+      marble += 1;
+      rows.push([marble, e.entryNumber, e.firstName, e.lastName, e.phone || '']);
+    }
+  }
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="loterie-${lottery.id}-billes.csv"`);
+  res.send(rows.map((r) => r.map(escape).join(',')).join('\n'));
+});
+
+// Tirage au sort serveur : pioche aléatoirement parmi les tickets PAYÉS.
+// Sauvegarde le numéro gagnant sur la loterie et passe son statut à 'drawn'.
+app.post('/api/lotteries/:id/draw', requireAdmin, (req, res) => {
+  const lottery = db.lotteries.find((l) => l.id === req.params.id);
+  if (!lottery) { res.status(404).json({ error: 'Loterie introuvable.' }); return; }
+  if (lottery.status === 'drawn') { res.status(403).json({ error: 'Le tirage a déjà eu lieu.' }); return; }
+  const pool = [];
+  for (const e of db.lotteryEntries) {
+    if (e.lotteryId !== lottery.id || !e.hasPaid) continue;
+    for (let i = 0; i < e.ticketCount; i++) pool.push(e);
+  }
+  if (pool.length === 0) { res.status(400).json({ error: 'Aucun ticket payé : impossible de tirer.' }); return; }
+  backupDb('avant-tirage-loterie');
+  const winner = pool[Math.floor(Math.random() * pool.length)];
+  lottery.winnerEntryNumber = winner.entryNumber;
+  lottery.winnerEntryId = winner.id;
+  lottery.status = 'drawn';
+  saveDb();
+  res.json({ winner });
 });
 
 app.get('/api/admin/audit', requireAdmin, (_req, res) => {

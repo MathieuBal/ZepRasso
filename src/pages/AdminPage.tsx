@@ -2,6 +2,7 @@ import { Download, QrCode, RefreshCw, Shield, Trash2, Upload } from 'lucide-reac
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import ImagePicker from '../components/ImagePicker';
+import LotteriesPanel from '../components/LotteriesPanel';
 import PageHeader from '../components/PageHeader';
 import ResultsTable from '../components/ResultsTable';
 import { getAdminCode, isAdminUnlocked, lockAdmin, unlockAdmin } from '../lib/localSession';
@@ -593,6 +594,11 @@ export default function AdminPage() {
           <p className="muted">Rien à signaler.</p>
         )}
       </div>
+
+      <LotteriesPanel
+        onMessage={(t) => { setError(null); setMessage(t); }}
+        onError={(t) => { setMessage(null); setError(t); }}
+      />
     </section>
   );
 }

@@ -22,6 +22,8 @@ export function defaultDb(now = new Date().toISOString()) {
     vehicles: [],
     votes: [],
     participants: [],
+    lotteries: [],
+    lotteryEntries: [],
   };
 }
 
@@ -93,6 +95,84 @@ export function normalizeVote(raw, now = new Date().toISOString()) {
   };
 }
 
+// Une loterie : 1 prix (typiquement une voiture RP) tiré au sort parmi les
+// tickets PAYÉS. Le revenu est purement orga (les tickets ne forment pas une
+// cagnotte redistribuée).
+export function normalizeLottery(raw, now = new Date().toISOString()) {
+  if (!raw || typeof raw !== 'object') return null;
+  const name = String(raw.name || '').trim();
+  if (!name) return null;
+  const ticketPrice = Math.max(0, Math.floor(Number(raw.ticketPrice) || 0));
+  const maxTicketsPerBuyer = Math.max(1, Math.floor(Number(raw.maxTicketsPerBuyer) || 5));
+  const status = ['open', 'closed', 'drawn'].includes(raw.status) ? raw.status : 'open';
+  return {
+    id: String(raw.id || randomUUID()),
+    name,
+    prizeDescription: raw.prizeDescription ? String(raw.prizeDescription).trim() : undefined,
+    prizeImageUrl: typeof raw.prizeImageUrl === 'string' && raw.prizeImageUrl ? raw.prizeImageUrl : undefined,
+    ticketPrice,
+    maxTicketsPerBuyer,
+    status,
+    // numéro du ticket gagnant (1..nbTotalTickets) une fois le tirage fait
+    winnerEntryNumber: Number.isFinite(Number(raw.winnerEntryNumber)) && raw.winnerEntryNumber > 0
+      ? Math.floor(Number(raw.winnerEntryNumber))
+      : undefined,
+    winnerEntryId: raw.winnerEntryId ? String(raw.winnerEntryId) : undefined,
+    createdAt: String(raw.createdAt || now),
+  };
+}
+
+// Une participation à la loterie (1 acheteur, N tickets). Un numéro de
+// participant unique par loterie, attribué côté serveur et jamais réutilisé
+// (max(entryNumber) + 1) pour éviter qu'un numéro recyclé crée de la confusion.
+export function normalizeLotteryEntry(raw, now = new Date().toISOString()) {
+  if (!raw || typeof raw !== 'object') return null;
+  const lotteryId = String(raw.lotteryId || '');
+  const firstName = String(raw.firstName || '').trim();
+  const lastName = String(raw.lastName || '').trim();
+  if (!lotteryId || !firstName || !lastName) return null;
+  const ticketCount = Math.max(1, Math.floor(Number(raw.ticketCount) || 1));
+  const entryNumber = Number.isFinite(Number(raw.entryNumber)) && raw.entryNumber > 0
+    ? Math.floor(Number(raw.entryNumber))
+    : 1;
+  const method = raw.paymentMethod;
+  return {
+    id: String(raw.id || randomUUID()),
+    lotteryId,
+    entryNumber,
+    firstName,
+    lastName,
+    phone: raw.phone ? String(raw.phone).trim() : undefined,
+    ticketCount,
+    hasPaid: Boolean(raw.hasPaid),
+    paymentMethod: (method === 'cash' || method === 'virement') ? method : undefined,
+    note: raw.note ? String(raw.note).trim() : undefined,
+    createdAt: String(raw.createdAt || now),
+  };
+}
+
+// Stats d'une loterie : nb tickets émis (payés ou non), nb tickets payés
+// (seuls éligibles au tirage = « billes »), revenu brut orga.
+export function computeLotteryStats(entries, ticketPrice) {
+  let totalTickets = 0;
+  let paidTickets = 0;
+  let paidEntries = 0;
+  for (const e of entries) {
+    totalTickets += e.ticketCount;
+    if (e.hasPaid) {
+      paidTickets += e.ticketCount;
+      paidEntries += 1;
+    }
+  }
+  return {
+    totalEntries: entries.length,
+    paidEntries,
+    totalTickets,
+    paidTickets,
+    revenue: paidTickets * (Number(ticketPrice) || 0),
+  };
+}
+
 export function normalizeDb(parsed, now = new Date().toISOString()) {
   const base = defaultDb(now);
   const event = parsed && typeof parsed.event === 'object' && parsed.event ? parsed.event : base.event;
@@ -108,6 +188,16 @@ export function normalizeDb(parsed, now = new Date().toISOString()) {
     : [];
   const participants = Array.isArray(parsed?.participants)
     ? parsed.participants.map((raw) => normalizeParticipant(raw, now)).filter(Boolean)
+    : [];
+  const lotteries = Array.isArray(parsed?.lotteries)
+    ? parsed.lotteries.map((raw) => normalizeLottery(raw, now)).filter(Boolean)
+    : [];
+  const lotteryIds = new Set(lotteries.map((l) => l.id));
+  // Les tickets orphelins (loterie supprimée) sont écartés à la lecture.
+  const lotteryEntries = Array.isArray(parsed?.lotteryEntries)
+    ? parsed.lotteryEntries
+        .map((raw) => normalizeLotteryEntry(raw, now))
+        .filter((e) => e && lotteryIds.has(e.lotteryId))
     : [];
   // Migration de statut : l'ancien 'open' (votes ouverts) devient 'voting'.
   // Tout statut inconnu retombe sur 'draft' (état le plus sûr : ni vote ni
@@ -128,6 +218,8 @@ export function normalizeDb(parsed, now = new Date().toISOString()) {
     vehicles,
     votes,
     participants,
+    lotteries,
+    lotteryEntries,
   };
 }
 
