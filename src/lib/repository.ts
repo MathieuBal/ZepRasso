@@ -1,5 +1,5 @@
 import { getAdminCode, getVoterId } from './localSession';
-import type { AuditReport, Lottery, LotteryEntry, LotteryStats, Participant, PaymentMethod, PrizePool, RassoEvent, Vehicle, Vote, VoteInput } from '../types';
+import type { AuditReport, Lottery, LotteryEntry, LotteryStats, Participant, PaymentMethod, PrizePool, Race, RaceDetails, RacePilot, RassoEvent, Vehicle, Vote, VoteInput } from '../types';
 
 export const EVENT_ID = 'rasso';
 
@@ -210,6 +210,65 @@ export async function deleteLotteryEntry(entryId: string): Promise<void> {
 
 export function drawLottery(id: string): Promise<{ winner: LotteryEntry }> {
   return api<{ winner: LotteryEntry }>(`/lotteries/${id}/draw`, { method: 'POST', headers: adminHeaders() });
+}
+
+// ─── Courses chronométrées (admin) ──────────────────────────────────────────
+
+export function getRaces(): Promise<Race[]> {
+  return api<Race[]>('/races', { headers: adminHeaders() });
+}
+
+export type RaceCreate = {
+  name: string;
+  description?: string;
+  entryFee: number;
+  rounds: number;
+  sequenceMode: Race['sequenceMode'];
+  orgaCutPercent: number;
+};
+
+export function createRace(input: RaceCreate): Promise<Race> {
+  return api<Race>('/races', { method: 'POST', headers: adminHeaders(), body: JSON.stringify(input) });
+}
+
+export function updateRace(id: string, patch: Partial<RaceCreate> & { status?: Race['status'] }): Promise<Race> {
+  return api<Race>(`/races/${id}`, { method: 'PATCH', headers: adminHeaders(), body: JSON.stringify(patch) });
+}
+
+export async function deleteRace(id: string): Promise<void> {
+  await api(`/races/${id}`, { method: 'DELETE', headers: adminHeaders() });
+}
+
+export function getRaceDetails(id: string): Promise<RaceDetails> {
+  return api<RaceDetails>(`/races/${id}/pilots`, { headers: adminHeaders() });
+}
+
+export type RacePilotInput = {
+  pseudo: string;
+  vehicle?: string;
+  hasPaid?: boolean;
+  paymentMethod?: PaymentMethod;
+  note?: string;
+};
+
+export function addRacePilot(raceId: string, input: RacePilotInput): Promise<RacePilot> {
+  return api<RacePilot>(`/races/${raceId}/pilots`, { method: 'POST', headers: adminHeaders(), body: JSON.stringify(input) });
+}
+
+export type RacePilotPatch = Partial<Omit<RacePilotInput, 'paymentMethod'>> & {
+  paymentMethod?: PaymentMethod | null;
+  // Mise à jour ciblée d'un temps : { roundIndex, timeMs }
+  roundIndex?: number;
+  timeMs?: number | null;
+  times?: (number | null)[];
+};
+
+export function updateRacePilot(id: string, patch: RacePilotPatch): Promise<RacePilot> {
+  return api<RacePilot>(`/race-pilots/${id}`, { method: 'PATCH', headers: adminHeaders(), body: JSON.stringify(patch) });
+}
+
+export async function deleteRacePilot(id: string): Promise<void> {
+  await api(`/race-pilots/${id}`, { method: 'DELETE', headers: adminHeaders() });
 }
 
 // Téléchargement direct (admin-headers) du CSV billes.

@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import ImagePicker from '../components/ImagePicker';
 import LotteriesPanel from '../components/LotteriesPanel';
 import PageHeader from '../components/PageHeader';
+import RacesPanel from '../components/RacesPanel';
 import ResultsTable from '../components/ResultsTable';
 import { getAdminCode, isAdminUnlocked, lockAdmin, unlockAdmin } from '../lib/localSession';
 import {
@@ -596,6 +597,11 @@ export default function AdminPage() {
       </div>
 
       <LotteriesPanel
+        onMessage={(t) => { setError(null); setMessage(t); }}
+        onError={(t) => { setMessage(null); setError(t); }}
+      />
+
+      <RacesPanel
         onMessage={(t) => { setError(null); setMessage(t); }}
         onError={(t) => { setMessage(null); setError(t); }}
       />

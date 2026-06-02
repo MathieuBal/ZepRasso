@@ -24,6 +24,8 @@ export function defaultDb(now = new Date().toISOString()) {
     participants: [],
     lotteries: [],
     lotteryEntries: [],
+    races: [],
+    racePilots: [],
   };
 }
 
@@ -199,6 +201,15 @@ export function normalizeDb(parsed, now = new Date().toISOString()) {
         .map((raw) => normalizeLotteryEntry(raw, now))
         .filter((e) => e && lotteryIds.has(e.lotteryId))
     : [];
+  const races = Array.isArray(parsed?.races)
+    ? parsed.races.map((raw) => normalizeRace(raw, now)).filter(Boolean)
+    : [];
+  const raceIds = new Set(races.map((r) => r.id));
+  // Pilotes orphelins (course supprimée) écartés à la lecture.
+  const racePilots = Array.isArray(parsed?.racePilots)
+    ? parsed.racePilots
+        .map((raw) => normalizeRacePilot(raw, now)).filter((p) => p && raceIds.has(p.raceId))
+    : [];
   // Migration de statut : l'ancien 'open' (votes ouverts) devient 'voting'.
   // Tout statut inconnu retombe sur 'draft' (état le plus sûr : ni vote ni
   // inscription).
@@ -220,6 +231,8 @@ export function normalizeDb(parsed, now = new Date().toISOString()) {
     participants,
     lotteries,
     lotteryEntries,
+    races,
+    racePilots,
   };
 }
 
@@ -257,14 +270,16 @@ export function publicParticipant(participant) {
   return { id: participant.id, pseudo: participant.pseudo };
 }
 
-// Calcule la répartition de la cagnotte. L'orga prend 10 % (arrondi), le reste
-// (net) est partagé sur le podium 60/25/15. Le gagnant absorbe l'arrondi pour
-// que first+second+third === net exactement (et orgaCut+podium === pool).
-export function computePrizePool(paidCount, entryFee) {
+// Calcule la répartition de la cagnotte. L'orga prend orgaPercent (défaut 10,
+// arrondi), le reste (net) est partagé sur le podium 60/25/15. Le gagnant
+// absorbe l'arrondi pour que first+second+third === net exactement (et
+// orgaCut+podium === pool).
+export function computePrizePool(paidCount, entryFee, orgaPercent = 10) {
   const count = Math.max(0, Math.floor(Number(paidCount) || 0));
   const fee = Math.max(0, Number(entryFee) || 0);
+  const pct = Math.min(100, Math.max(0, Number(orgaPercent) || 0));
   const pool = count * fee;
-  const orgaCut = Math.round(pool * 0.10);
+  const orgaCut = Math.round(pool * (pct / 100));
   const net = pool - orgaCut;
   const second = Math.round(net * 0.25);
   const third = Math.round(net * 0.15);
@@ -322,4 +337,114 @@ export function computeAudit(votes) {
     sharedIps,
     reusedPseudos,
   };
+}
+
+// ─── Courses chronométrées ──────────────────────────────────────────────────
+
+// Parse "1:23.450" / "83.450" / "83.45" / "83" → millisecondes (entier).
+// Renvoie null si la chaîne est vide ou non parsable.
+export function parseTimeStr(s) {
+  if (s === null || s === undefined) return null;
+  const str = String(s).trim();
+  if (!str) return null;
+  // mm:ss(.ms)
+  const m = /^(\d+):(\d{1,2})(?:[.,](\d{1,3}))?$/.exec(str);
+  if (m) {
+    const min = parseInt(m[1], 10);
+    const sec = parseInt(m[2], 10);
+    if (sec >= 60) return null;
+    const msStr = m[3] || '0';
+    const ms = parseInt(msStr.padEnd(3, '0'), 10);
+    return min * 60_000 + sec * 1000 + ms;
+  }
+  // ss(.ms) seul
+  const m2 = /^(\d+)(?:[.,](\d{1,3}))?$/.exec(str);
+  if (m2) {
+    const sec = parseInt(m2[1], 10);
+    const msStr = m2[2] || '0';
+    const ms = parseInt(msStr.padEnd(3, '0'), 10);
+    return sec * 1000 + ms;
+  }
+  return null;
+}
+
+export function formatMs(ms) {
+  if (ms === null || ms === undefined || !Number.isFinite(Number(ms))) return '';
+  const total = Math.max(0, Math.floor(Number(ms)));
+  const min = Math.floor(total / 60_000);
+  const sec = Math.floor((total % 60_000) / 1000);
+  const milli = total % 1000;
+  return `${min}:${String(sec).padStart(2, '0')}.${String(milli).padStart(3, '0')}`;
+}
+
+// Une course chrono. sequenceMode est purement indicatif côté UI (mode A =
+// chaque pilote enchaîne ses runs ; mode B = tour par tour pour tout le monde).
+// La donnée est identique dans les deux cas : un tableau de N temps par pilote.
+export function normalizeRace(raw, now = new Date().toISOString()) {
+  if (!raw || typeof raw !== 'object') return null;
+  const name = String(raw.name || '').trim();
+  if (!name) return null;
+  const entryFee = Math.max(0, Math.floor(Number(raw.entryFee) || 0));
+  const rounds = Math.min(10, Math.max(1, Math.floor(Number(raw.rounds) || 3)));
+  const orgaCutPercent = Math.min(50, Math.max(0, Number(raw.orgaCutPercent) ?? 10));
+  const sequenceMode = raw.sequenceMode === 'alternating' ? 'alternating' : 'sequential';
+  const status = ['draft', 'open', 'running', 'finished'].includes(raw.status) ? raw.status : 'open';
+  return {
+    id: String(raw.id || randomUUID()),
+    name,
+    description: raw.description ? String(raw.description).trim() : undefined,
+    entryFee,
+    rounds,
+    sequenceMode,
+    orgaCutPercent,
+    status,
+    createdAt: String(raw.createdAt || now),
+  };
+}
+
+export function normalizeRacePilot(raw, now = new Date().toISOString()) {
+  if (!raw || typeof raw !== 'object') return null;
+  const raceId = String(raw.raceId || '');
+  const pseudo = String(raw.pseudo || '').trim();
+  if (!raceId || !pseudo) return null;
+  // times[] : longueur libre, valeurs ms entières positives ou null pour "vide".
+  // Important : ne pas confondre null/undefined avec 0 (Number(null) === 0).
+  const times = Array.isArray(raw.times)
+    ? raw.times.map((t) => {
+        if (t === null || t === undefined || t === '') return null;
+        const n = Number(t);
+        return Number.isFinite(n) && n >= 0 ? Math.floor(n) : null;
+      })
+    : [];
+  const method = raw.paymentMethod;
+  return {
+    id: String(raw.id || randomUUID()),
+    raceId,
+    pseudo,
+    vehicle: raw.vehicle ? String(raw.vehicle).trim() : undefined,
+    hasPaid: Boolean(raw.hasPaid),
+    paymentMethod: (method === 'cash' || method === 'virement') ? method : undefined,
+    note: raw.note ? String(raw.note).trim() : undefined,
+    times,
+    createdAt: String(raw.createdAt || now),
+  };
+}
+
+// Meilleur temps du pilote (min des entrées non nulles) ou null.
+export function bestTime(pilot) {
+  const valid = (pilot.times || []).filter((t) => t !== null && t !== undefined);
+  return valid.length > 0 ? Math.min(...valid) : null;
+}
+
+// Classement : trié par meilleur temps croissant. Les pilotes sans aucun temps
+// terminent en bas de tableau (ordre stable entre eux).
+export function computeRaceStandings(pilots) {
+  return [...pilots].sort((a, b) => {
+    const ta = bestTime(a);
+    const tb = bestTime(b);
+    if (ta === null && tb === null) return 0;
+    if (ta === null) return 1;
+    if (tb === null) return -1;
+    return ta - tb;
+  });
 }

@@ -66,6 +66,47 @@ export type LotteryStats = {
   revenue: number;
 };
 
+export type RaceStatus = 'draft' | 'open' | 'running' | 'finished';
+export type RaceSequenceMode = 'sequential' | 'alternating';
+
+export type Race = {
+  id: string;
+  name: string;
+  description?: string;
+  entryFee: number;
+  rounds: number;
+  sequenceMode: RaceSequenceMode;
+  orgaCutPercent: number;
+  status: RaceStatus;
+  createdAt: string;
+};
+
+export type RacePilot = {
+  id: string;
+  raceId: string;
+  pseudo: string;
+  vehicle?: string;
+  hasPaid: boolean;
+  paymentMethod?: PaymentMethod;
+  note?: string;
+  times: (number | null)[]; // millisecondes ou null pour un essai non passé
+  createdAt: string;
+};
+
+// Pilote enrichi côté serveur dans la réponse /pilots (meilleur temps + rang).
+export type RacePilotWithMeta = RacePilot & {
+  bestTime: number | null;
+  rank: number | null;
+};
+
+export type RaceDetails = {
+  race: Race;
+  pilots: RacePilotWithMeta[];
+  prize: PrizePool;
+  paidCount: number;
+  totalPilots: number;
+};
+
 export type Vehicle = {
   id: string;
   eventId: string;

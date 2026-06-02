@@ -7,14 +7,18 @@ import {
   clamp,
   computeAudit,
   defaultDb,
+  bestTime,
   computeLotteryStats,
   computePrizePool,
+  computeRaceStandings,
   findExistingVote,
   isOwnVehicle,
   normalizeDb,
   normalizeLottery,
   normalizeLotteryEntry,
   normalizeParticipant,
+  normalizeRace,
+  normalizeRacePilot,
   normalizeVote,
   ownsVehicleByDevice,
   publicVote,
@@ -769,6 +773,119 @@ app.post('/api/lotteries/:id/draw', requireAdmin, (req, res) => {
   lottery.status = 'drawn';
   saveDb();
   res.json({ winner });
+});
+
+// ─── Courses chronométrées (toutes admin) ───────────────────────────────────
+// Modèle : 1 course → N pilotes → chaque pilote a un tableau de temps (1 par
+// run, longueur = race.rounds). Le meilleur temps détermine le classement.
+
+app.get('/api/races', requireAdmin, (_req, res) => {
+  res.json(db.races);
+});
+
+app.post('/api/races', requireAdmin, (req, res) => {
+  const race = normalizeRace({ ...(req.body || {}), status: 'open' });
+  if (!race) { res.status(400).json({ error: 'Nom de la course obligatoire.' }); return; }
+  db.races.push(race);
+  saveDb();
+  res.json(race);
+});
+
+app.patch('/api/races/:id', requireAdmin, (req, res) => {
+  const race = db.races.find((r) => r.id === req.params.id);
+  if (!race) { res.status(404).json({ error: 'Course introuvable.' }); return; }
+  const body = req.body || {};
+  if (typeof body.name === 'string' && body.name.trim()) race.name = body.name.trim();
+  if (typeof body.description === 'string') race.description = body.description.trim() || undefined;
+  if (typeof body.entryFee === 'number' && body.entryFee >= 0) race.entryFee = Math.floor(body.entryFee);
+  if (typeof body.rounds === 'number' && body.rounds >= 1) race.rounds = Math.min(10, Math.floor(body.rounds));
+  if (typeof body.orgaCutPercent === 'number' && body.orgaCutPercent >= 0 && body.orgaCutPercent <= 50) race.orgaCutPercent = body.orgaCutPercent;
+  if (body.sequenceMode === 'sequential' || body.sequenceMode === 'alternating') race.sequenceMode = body.sequenceMode;
+  if (['draft', 'open', 'running', 'finished'].includes(body.status)) race.status = body.status;
+  saveDb();
+  res.json(race);
+});
+
+app.delete('/api/races/:id', requireAdmin, (req, res) => {
+  const idx = db.races.findIndex((r) => r.id === req.params.id);
+  if (idx === -1) { res.status(404).json({ error: 'Course introuvable.' }); return; }
+  backupDb('avant-suppression-course');
+  db.races.splice(idx, 1);
+  // Cascade : pilotes de cette course supprimés.
+  db.racePilots = db.racePilots.filter((p) => p.raceId !== req.params.id);
+  saveDb();
+  res.json({ ok: true });
+});
+
+app.get('/api/races/:id/pilots', requireAdmin, (req, res) => {
+  const race = db.races.find((r) => r.id === req.params.id);
+  if (!race) { res.status(404).json({ error: 'Course introuvable.' }); return; }
+  const pilots = db.racePilots.filter((p) => p.raceId === race.id);
+  const standings = computeRaceStandings(pilots);
+  const paidCount = pilots.filter((p) => p.hasPaid).length;
+  const prize = computePrizePool(paidCount, race.entryFee, race.orgaCutPercent);
+  // Réponse enrichie : pour chaque pilote, son meilleur temps et son rang.
+  const withMeta = standings.map((p, i) => ({ ...p, bestTime: bestTime(p), rank: bestTime(p) === null ? null : i + 1 }));
+  res.json({ race, pilots: withMeta, prize, paidCount, totalPilots: pilots.length });
+});
+
+app.post('/api/races/:id/pilots', requireAdmin, (req, res) => {
+  const race = db.races.find((r) => r.id === req.params.id);
+  if (!race) { res.status(404).json({ error: 'Course introuvable.' }); return; }
+  const body = req.body || {};
+  const pilot = normalizeRacePilot({
+    raceId: race.id,
+    pseudo: body.pseudo,
+    vehicle: body.vehicle,
+    hasPaid: body.hasPaid,
+    paymentMethod: body.paymentMethod,
+    note: body.note,
+    // On initialise un tableau de la bonne longueur (rounds), rempli de null.
+    times: Array.from({ length: race.rounds }, () => null),
+  });
+  if (!pilot) { res.status(400).json({ error: 'Pseudo du pilote obligatoire.' }); return; }
+  db.racePilots.push(pilot);
+  saveDb();
+  res.json(pilot);
+});
+
+app.patch('/api/race-pilots/:id', requireAdmin, (req, res) => {
+  const pilot = db.racePilots.find((p) => p.id === req.params.id);
+  if (!pilot) { res.status(404).json({ error: 'Pilote introuvable.' }); return; }
+  const race = db.races.find((r) => r.id === pilot.raceId);
+  const body = req.body || {};
+  if (typeof body.pseudo === 'string' && body.pseudo.trim()) pilot.pseudo = body.pseudo.trim();
+  if (typeof body.vehicle === 'string') pilot.vehicle = body.vehicle.trim() || undefined;
+  if (typeof body.hasPaid === 'boolean') pilot.hasPaid = body.hasPaid;
+  if (body.paymentMethod === 'cash' || body.paymentMethod === 'virement') pilot.paymentMethod = body.paymentMethod;
+  else if (body.paymentMethod === null || body.paymentMethod === '') pilot.paymentMethod = undefined;
+  if (typeof body.note === 'string') pilot.note = body.note.trim() || undefined;
+  // Maj d'un temps précis : { roundIndex: 0..n-1, timeMs: number|null }
+  if (typeof body.roundIndex === 'number' && body.roundIndex >= 0) {
+    const idx = Math.floor(body.roundIndex);
+    const max = race?.rounds ?? pilot.times.length;
+    if (idx >= max) { res.status(400).json({ error: `Cette course n'a que ${max} tours.` }); return; }
+    // S'assurer que le tableau a la bonne taille (au cas où race.rounds a été augmenté).
+    while (pilot.times.length < max) pilot.times.push(null);
+    const v = body.timeMs;
+    if (v === null) pilot.times[idx] = null;
+    else if (Number.isFinite(Number(v)) && Number(v) >= 0) pilot.times[idx] = Math.floor(Number(v));
+    else { res.status(400).json({ error: 'Temps invalide.' }); return; }
+  }
+  // Remplacement complet de times (utile pour reset)
+  if (Array.isArray(body.times)) {
+    pilot.times = body.times.map((t) => (Number.isFinite(Number(t)) && Number(t) >= 0 ? Math.floor(Number(t)) : null));
+  }
+  saveDb();
+  res.json(pilot);
+});
+
+app.delete('/api/race-pilots/:id', requireAdmin, (req, res) => {
+  const idx = db.racePilots.findIndex((p) => p.id === req.params.id);
+  if (idx === -1) { res.status(404).json({ error: 'Pilote introuvable.' }); return; }
+  db.racePilots.splice(idx, 1);
+  saveDb();
+  res.json({ ok: true });
 });
 
 app.get('/api/admin/audit', requireAdmin, (_req, res) => {

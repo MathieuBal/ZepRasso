@@ -1,15 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import {
+  bestTime,
   clamp,
   computeAudit,
   computePrizePool,
+  computeRaceStandings,
   defaultDb,
   findExistingVote,
+  formatMs,
   isOwnVehicle,
   normalizeDb,
   normalizeParticipant,
+  normalizeRace,
+  normalizeRacePilot,
   normalizeVote,
   ownsVehicleByDevice,
+  parseTimeStr,
   publicVote,
 } from './lib.mjs';
 
@@ -306,5 +312,71 @@ describe('computeAudit', () => {
       sharedIps: [],
       reusedPseudos: [],
     });
+  });
+});
+
+describe('parseTimeStr / formatMs', () => {
+  it('parses mm:ss.ms and round-trips', () => {
+    expect(parseTimeStr('1:23.450')).toBe(83_450);
+    expect(formatMs(83_450)).toBe('1:23.450');
+  });
+  it('accepts seconds-only and comma decimals', () => {
+    expect(parseTimeStr('83.4')).toBe(83_400);
+    expect(parseTimeStr('83,45')).toBe(83_450);
+  });
+  it('rejects garbage and 60+ seconds in mm:ss', () => {
+    expect(parseTimeStr('abc')).toBeNull();
+    expect(parseTimeStr('1:60.000')).toBeNull();
+    expect(parseTimeStr('')).toBeNull();
+  });
+});
+
+describe('normalizeRace', () => {
+  it('returns null without a name', () => {
+    expect(normalizeRace({}, NOW)).toBeNull();
+  });
+  it('clamps rounds to [1, 10] and orga % to [0, 50] and defaults sequenceMode/status', () => {
+    const r = normalizeRace({ name: 'X', rounds: 99, orgaCutPercent: 80 }, NOW);
+    expect(r.rounds).toBe(10);
+    expect(r.orgaCutPercent).toBe(50);
+    expect(r.sequenceMode).toBe('sequential');
+    expect(r.status).toBe('open');
+  });
+});
+
+describe('normalizeRacePilot', () => {
+  it('returns null without raceId or pseudo', () => {
+    expect(normalizeRacePilot({ raceId: 'r1' }, NOW)).toBeNull();
+    expect(normalizeRacePilot({ pseudo: 'X' }, NOW)).toBeNull();
+  });
+  it('preserves valid times and converts garbage to null', () => {
+    const p = normalizeRacePilot({ raceId: 'r1', pseudo: 'X', times: [1000, 'bad', null, 2500.7] }, NOW);
+    expect(p.times).toEqual([1000, null, null, 2500]);
+  });
+});
+
+describe('bestTime + computeRaceStandings', () => {
+  const r = (pseudo, times) => ({ id: pseudo, raceId: 'r', pseudo, times, hasPaid: true });
+  it('returns the smallest non-null time', () => {
+    expect(bestTime(r('A', [3000, 1500, 2000]))).toBe(1500);
+    expect(bestTime(r('B', [null, null]))).toBeNull();
+  });
+  it('orders by best time, pushing pilots without times to the end', () => {
+    const standings = computeRaceStandings([
+      r('A', [2000, 2500]),
+      r('B', [null]),
+      r('C', [1800, null]),
+    ]);
+    expect(standings.map((p) => p.pseudo)).toEqual(['C', 'A', 'B']);
+  });
+});
+
+describe('computePrizePool with custom orga %', () => {
+  it('honours an orga percent different from the default 10', () => {
+    const r = computePrizePool(4, 100_000, 20);
+    expect(r.pool).toBe(400_000);
+    expect(r.orgaCut).toBe(80_000);
+    expect(r.net).toBe(320_000);
+    expect(r.podium.first + r.podium.second + r.podium.third).toBe(r.net);
   });
 });
