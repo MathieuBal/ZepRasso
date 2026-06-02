@@ -247,3 +247,10 @@ export type FinanceSummary = {
     grossHandled: number;
   };
 };
+
+export type CategoryPool = PrizePool & { category: string; paidCount: number };
+
+export type CategoriesInfo = {
+  entryFee: number;
+  categories: CategoryPool[];
+};

@@ -102,3 +102,23 @@ export function findUserVote(votes: Vote[], vehicleId: string, voterPseudo: stri
   if (!voterPseudo) return undefined;
   return votes.find((vote) => vote.vehicleId === vehicleId && vote.voterPseudo.toLowerCase() === voterPseudo.toLowerCase());
 }
+
+// Regroupe des scores déjà calculés par catégorie de véhicule (catégorie vide
+// = bucket ''). L'ordre des catégories suit le meilleur score de chacune.
+// Le classement à l'intérieur reste celui de calculateVehicleScores (quorum +
+// pondération calculés globalement, on ne fait que filtrer/regrouper ici).
+export function groupScoresByCategory(scores: VehicleScore[]): { category: string; scores: VehicleScore[] }[] {
+  const byCat = new Map<string, VehicleScore[]>();
+  for (const s of scores) {
+    const cat = (s.vehicle.category || '').trim();
+    if (!byCat.has(cat)) byCat.set(cat, []);
+    byCat.get(cat)!.push(s);
+  }
+  return [...byCat.entries()]
+    .map(([category, list]) => ({ category, scores: list }))
+    .sort((a, b) => {
+      const bestA = a.scores[0]?.weightedAverage ?? 0;
+      const bestB = b.scores[0]?.weightedAverage ?? 0;
+      return bestB - bestA;
+    });
+}

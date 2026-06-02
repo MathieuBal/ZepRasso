@@ -4,6 +4,7 @@ import {
   clamp,
   computeAudit,
   computeBetPayouts,
+  computeCategoryPools,
   computeFinanceSummary,
   computePrizePool,
   computeRaceStandings,
@@ -483,5 +484,35 @@ describe('computeFinanceSummary', () => {
   it('handles an empty db gracefully', () => {
     const r = computeFinanceSummary({ event: { entryFee: 0 } });
     expect(r.totals).toEqual({ orgaTake: 0, toPayOut: 0, grossHandled: 0 });
+  });
+});
+
+describe('computeCategoryPools', () => {
+  it('routes each paid participant fee to its vehicle category pool', () => {
+    const vehicles = [
+      { id: 'v1', participantId: 'p1', category: 'JDM' },
+      { id: 'v2', participantId: 'p2', category: 'JDM' },
+      { id: 'v3', participantId: 'p3', category: 'Muscle' },
+      { id: 'v4', participantId: 'p4', category: '' }, // → bucket Général
+    ];
+    const participants = [
+      { id: 'p1', hasPaid: true },
+      { id: 'p2', hasPaid: true },
+      { id: 'p3', hasPaid: true },
+      { id: 'p4', hasPaid: false }, // pas payé → ignoré
+      { id: 'p5', hasPaid: true },  // payé mais sans véhicule → aucun pot
+    ];
+    const pools = computeCategoryPools(vehicles, participants, 100000);
+    const jdm = pools.find((p) => p.category === 'JDM');
+    const muscle = pools.find((p) => p.category === 'Muscle');
+    expect(jdm.paidCount).toBe(2);
+    expect(jdm.pool).toBe(200000);
+    expect(jdm.orgaCut).toBe(20000);
+    expect(muscle.paidCount).toBe(1);
+    expect(muscle.pool).toBe(100000);
+    // p4 pas payé, p5 sans véhicule → pas de pot 'Général'
+    expect(pools.find((p) => p.category === '')).toBeUndefined();
+    // Tri par pool décroissant.
+    expect(pools[0].category).toBe('JDM');
   });
 });

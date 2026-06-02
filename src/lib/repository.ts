@@ -1,5 +1,5 @@
 import { getAdminCode, getVoterId } from './localSession';
-import type { AuditReport, FinanceSummary, Lottery, LotteryEntry, LotteryStats, Participant, PaymentMethod, PrizePool, Race, RaceBet, RaceBetPayouts, RaceDetails, RacePilot, RassoEvent, Vehicle, Vote, VoteInput } from '../types';
+import type { AuditReport, CategoriesInfo, FinanceSummary, Lottery, LotteryEntry, LotteryStats, Participant, PaymentMethod, PrizePool, Race, RaceBet, RaceBetPayouts, RaceDetails, RacePilot, RassoEvent, Vehicle, Vote, VoteInput } from '../types';
 
 export const EVENT_ID = 'rasso';
 
@@ -51,6 +51,10 @@ export type PrizeSummary = PrizePool & { entryFee: number; paidCount: number };
 
 export function getPrize(): Promise<PrizeSummary> {
   return api<PrizeSummary>('/prize');
+}
+
+export function getCategories(): Promise<CategoriesInfo> {
+  return api<CategoriesInfo>('/categories');
 }
 
 export function updateEvent(patch: { name?: string; status?: RassoEvent['status']; entryFee?: number }): Promise<RassoEvent> {

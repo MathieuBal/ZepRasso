@@ -620,3 +620,24 @@ export function computeFinanceSummary(data) {
     totals: { orgaTake, toPayOut, grossHandled },
   };
 }
+
+// ─── Cagnottes par catégorie de concours ────────────────────────────────────
+// Chaque participant payé alimente le pot de SA catégorie (celle de son
+// véhicule). Un participant payé sans véhicule (donc sans catégorie) n'est
+// rattaché à aucun pot. Catégorie vide → bucket '' (affiché « Général »).
+export function computeCategoryPools(vehicles, participants, entryFee) {
+  const catByParticipant = new Map();
+  for (const v of vehicles) {
+    if (v.participantId) catByParticipant.set(v.participantId, v.category || '');
+  }
+  const paidByCat = new Map();
+  for (const p of participants) {
+    if (!p.hasPaid) continue;
+    const cat = catByParticipant.get(p.id);
+    if (cat === undefined) continue; // payé mais sans véhicule rattaché
+    paidByCat.set(cat, (paidByCat.get(cat) || 0) + 1);
+  }
+  return [...paidByCat.entries()]
+    .map(([category, paidCount]) => ({ category, paidCount, ...computePrizePool(paidCount, entryFee, 10) }))
+    .sort((a, b) => b.pool - a.pool);
+}

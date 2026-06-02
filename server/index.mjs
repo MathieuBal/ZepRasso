@@ -10,6 +10,7 @@ import {
   bestTime,
   computeBetPayouts,
   computeBetTotalsByPilot,
+  computeCategoryPools,
   computeFinanceSummary,
   computeLotteryStats,
   computePrizePool,
@@ -449,6 +450,13 @@ app.get('/api/prize', (_req, res) => {
   const paidCount = db.participants.filter((p) => p.hasPaid).length;
   const fee = db.event.entryFee || 0;
   res.json({ entryFee: fee, paidCount, ...computePrizePool(paidCount, fee) });
+});
+
+// Cagnottes par catégorie (public, montants + comptes seulement, aucune donnée
+// perso). Permet d'afficher un podium et un pot par catégorie.
+app.get('/api/categories', (_req, res) => {
+  const fee = db.event.entryFee || 0;
+  res.json({ entryFee: fee, categories: computeCategoryPools(db.vehicles, db.participants, fee) });
 });
 
 app.patch('/api/event', requireAdmin, (req, res) => {
