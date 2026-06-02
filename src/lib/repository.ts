@@ -1,5 +1,5 @@
 import { getAdminCode, getVoterId } from './localSession';
-import type { AuditReport, Lottery, LotteryEntry, LotteryStats, Participant, PaymentMethod, PrizePool, Race, RaceBet, RaceBetPayouts, RaceDetails, RacePilot, RassoEvent, Vehicle, Vote, VoteInput } from '../types';
+import type { AuditReport, FinanceSummary, Lottery, LotteryEntry, LotteryStats, Participant, PaymentMethod, PrizePool, Race, RaceBet, RaceBetPayouts, RaceDetails, RacePilot, RassoEvent, Vehicle, Vote, VoteInput } from '../types';
 
 export const EVENT_ID = 'rasso';
 
@@ -152,6 +152,10 @@ export async function restoreBackup(data: unknown): Promise<{ vehicles: number; 
 
 export function getAudit(): Promise<AuditReport> {
   return api<AuditReport>('/admin/audit', { headers: adminHeaders() });
+}
+
+export function getFinance(): Promise<FinanceSummary> {
+  return api<FinanceSummary>('/admin/finance', { headers: adminHeaders() });
 }
 
 // ─── Loteries (admin) ────────────────────────────────────────────────────────

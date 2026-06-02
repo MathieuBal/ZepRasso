@@ -10,6 +10,7 @@ import {
   bestTime,
   computeBetPayouts,
   computeBetTotalsByPilot,
+  computeFinanceSummary,
   computeLotteryStats,
   computePrizePool,
   computeRaceStandings,
@@ -1037,6 +1038,11 @@ app.post('/api/races/:id/winner', requireAdmin, (req, res) => {
 
 app.get('/api/admin/audit', requireAdmin, (_req, res) => {
   res.json(computeAudit(db.votes));
+});
+
+// Récap financier de toute la soirée (concours + loteries + courses + paris).
+app.get('/api/admin/finance', requireAdmin, (_req, res) => {
+  res.json(computeFinanceSummary(db));
 });
 
 app.get('/api/admin/backup', requireAdmin, (_req, res) => {

@@ -2,6 +2,7 @@ import { Download, QrCode, RefreshCw, Shield, Trash2, Upload } from 'lucide-reac
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import ImagePicker from '../components/ImagePicker';
+import FinancePanel from '../components/FinancePanel';
 import LotteriesPanel from '../components/LotteriesPanel';
 import PageHeader from '../components/PageHeader';
 import RacesPanel from '../components/RacesPanel';
@@ -340,6 +341,8 @@ export default function AdminPage() {
         {message && <p className="success">{message}</p>}
         {error && <p className="error">{error}</p>}
       </div>
+
+      <FinancePanel reloadKey={votes.length + vehicles.length + participants.length} />
 
       <div className="panel grid">
         <div className="between">
