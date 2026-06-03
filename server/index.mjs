@@ -634,6 +634,7 @@ app.post('/api/lotteries', requireAdmin, (req, res) => {
     prizeDescription: body.prizeDescription,
     prizeImageUrl,
     ticketPrice: body.ticketPrice,
+    prizeValue: body.prizeValue,
     maxTicketsPerBuyer: body.maxTicketsPerBuyer,
     status: 'open',
   });
@@ -650,6 +651,7 @@ app.patch('/api/lotteries/:id', requireAdmin, (req, res) => {
   if (typeof body.name === 'string' && body.name.trim()) lottery.name = body.name.trim();
   if (typeof body.prizeDescription === 'string') lottery.prizeDescription = body.prizeDescription.trim() || undefined;
   if (typeof body.ticketPrice === 'number' && body.ticketPrice >= 0) lottery.ticketPrice = Math.floor(body.ticketPrice);
+  if (typeof body.prizeValue === 'number' && body.prizeValue >= 0) lottery.prizeValue = Math.floor(body.prizeValue);
   if (typeof body.maxTicketsPerBuyer === 'number' && body.maxTicketsPerBuyer >= 1) lottery.maxTicketsPerBuyer = Math.floor(body.maxTicketsPerBuyer);
   if (['open', 'closed', 'drawn'].includes(body.status)) lottery.status = body.status;
   if (typeof body.prizeImageUrl === 'string' && body.prizeImageUrl.startsWith('data:')) {

@@ -106,6 +106,8 @@ export function normalizeLottery(raw, now = new Date().toISOString()) {
   const name = String(raw.name || '').trim();
   if (!name) return null;
   const ticketPrice = Math.max(0, Math.floor(Number(raw.ticketPrice) || 0));
+  // Coût d'achat du lot (la voiture) pour calculer le bénéfice réel de l'orga.
+  const prizeValue = Math.max(0, Math.floor(Number(raw.prizeValue) || 0));
   const maxTicketsPerBuyer = Math.max(1, Math.floor(Number(raw.maxTicketsPerBuyer) || 5));
   const status = ['open', 'closed', 'drawn'].includes(raw.status) ? raw.status : 'open';
   return {
@@ -114,6 +116,7 @@ export function normalizeLottery(raw, now = new Date().toISOString()) {
     prizeDescription: raw.prizeDescription ? String(raw.prizeDescription).trim() : undefined,
     prizeImageUrl: typeof raw.prizeImageUrl === 'string' && raw.prizeImageUrl ? raw.prizeImageUrl : undefined,
     ticketPrice,
+    prizeValue,
     maxTicketsPerBuyer,
     status,
     // numéro du ticket gagnant (1..nbTotalTickets) une fois le tirage fait
@@ -580,13 +583,17 @@ export function computeFinanceSummary(data) {
     categories,
   };
 
-  // Loteries : revenu intégralement à l'orga (la voiture est offerte par l'orga).
+  // Loteries : revenu des tickets, moins le coût du lot (la voiture) acheté par
+  // l'orga → bénéfice net = revenu - prizeValue.
   const lotteriesDetail = lotteries.map((l) => {
     const entries = lotteryEntries.filter((e) => e.lotteryId === l.id);
     const stats = computeLotteryStats(entries, l.ticketPrice);
-    return { id: l.id, name: l.name, revenue: stats.revenue, paidTickets: stats.paidTickets, status: l.status };
+    const cost = Math.max(0, Number(l.prizeValue) || 0);
+    return { id: l.id, name: l.name, revenue: stats.revenue, cost, profit: stats.revenue - cost, paidTickets: stats.paidTickets, status: l.status };
   });
   const lotteriesRevenue = lotteriesDetail.reduce((s, l) => s + l.revenue, 0);
+  const lotteriesCost = lotteriesDetail.reduce((s, l) => s + l.cost, 0);
+  const lotteriesProfit = lotteriesRevenue - lotteriesCost;
 
   // Courses : part orga = cut sur les inscriptions pilotes + cut sur les paris.
   const racesDetail = races.map((r) => {
@@ -612,16 +619,21 @@ export function computeFinanceSummary(data) {
   const racesOrgaCut = racesDetail.reduce((s, r) => s + r.orgaCut, 0);
   const racesToPayOut = racesDetail.reduce((s, r) => s + r.pilotToPayOut + r.betToPayOut, 0);
 
-  const orgaTake = contest.orgaCut + lotteriesRevenue + racesOrgaCut;
+  const racesOrgaTake = racesOrgaCut;
+  // « orgaTake » = encaissements bruts gardés par l'orga (avant coût des lots).
+  const orgaTake = contest.orgaCut + lotteriesRevenue + racesOrgaTake;
   const toPayOut = contest.toPayOut + racesToPayOut;
   const grossHandled = contest.pool + lotteriesRevenue
     + racesDetail.reduce((s, r) => s + r.pilotPool + r.betPool, 0);
+  // « netProfit » = ce qui reste vraiment dans la poche après l'achat des lots.
+  const costs = lotteriesCost;
+  const netProfit = orgaTake - costs;
 
   return {
     contest,
-    lotteries: { detail: lotteriesDetail, revenue: lotteriesRevenue },
+    lotteries: { detail: lotteriesDetail, revenue: lotteriesRevenue, cost: lotteriesCost, profit: lotteriesProfit },
     races: racesDetail,
-    totals: { orgaTake, toPayOut, grossHandled },
+    totals: { orgaTake, toPayOut, grossHandled, costs, netProfit },
   };
 }
 

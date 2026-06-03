@@ -21,6 +21,7 @@ const blankNew = {
   prizeDescription: '',
   prizeImageUrl: '',
   ticketPrice: 50000,
+  prizeValue: 0,
   maxTicketsPerBuyer: 5,
 };
 
@@ -78,6 +79,7 @@ export default function LotteriesPanel({ onMessage, onError }: LotteriesPanelPro
         prizeDescription: newLottery.prizeDescription.trim() || undefined,
         prizeImageUrl: newLottery.prizeImageUrl || undefined,
         ticketPrice: Number(newLottery.ticketPrice) || 0,
+        prizeValue: Math.max(0, Number(newLottery.prizeValue) || 0),
         maxTicketsPerBuyer: Math.max(1, Number(newLottery.maxTicketsPerBuyer) || 5),
       });
       setNewLottery(blankNew);
@@ -100,6 +102,12 @@ export default function LotteriesPanel({ onMessage, onError }: LotteriesPanelPro
   async function handleToggleLotteryStatus(l: Lottery) {
     const next = l.status === 'open' ? 'closed' : 'open';
     try { await updateLottery(l.id, { status: next }); await refreshList(); if (selectedId) refreshEntries(selectedId); }
+    catch (err) { onError((err as Error).message); }
+  }
+
+  async function handleSetPrizeValue(l: Lottery, value: number) {
+    if (value === l.prizeValue) return;
+    try { await updateLottery(l.id, { prizeValue: Math.max(0, Math.floor(value)) }); await refreshList(); if (selectedId) refreshEntries(selectedId); }
     catch (err) { onError((err as Error).message); }
   }
 
@@ -212,10 +220,17 @@ export default function LotteriesPanel({ onMessage, onError }: LotteriesPanelPro
             <input className="input" type="number" min="0" step="1000" value={newLottery.ticketPrice} onChange={(e) => setNewLottery({ ...newLottery, ticketPrice: Number(e.target.value) })} />
           </label>
           <label className="field" style={{ flex: 1 }}>
+            <span className="label">Prix d'achat du lot ($)</span>
+            <input className="input" type="number" min="0" step="1000" value={newLottery.prizeValue} onChange={(e) => setNewLottery({ ...newLottery, prizeValue: Number(e.target.value) })} placeholder="ce que la voiture t'a coûté" />
+          </label>
+          <label className="field" style={{ flex: 1 }}>
             <span className="label">Max tickets / personne</span>
             <input className="input" type="number" min="1" step="1" value={newLottery.maxTicketsPerBuyer} onChange={(e) => setNewLottery({ ...newLottery, maxTicketsPerBuyer: Number(e.target.value) })} />
           </label>
         </div>
+        <p className="muted" style={{ fontSize: '0.8rem', marginTop: -4 }}>
+          Le prix d'achat sert à calculer ton bénéfice réel (revenu des tickets − coût de la voiture). Tu pourras l'ajuster plus tard.
+        </p>
         <button className="button primary" type="submit"><Plus size={16} /> Créer la loterie</button>
       </form>
 
@@ -276,8 +291,26 @@ export default function LotteriesPanel({ onMessage, onError }: LotteriesPanelPro
               <span className="badge wait">{stats.totalTickets} ticket{stats.totalTickets > 1 ? 's' : ''} émis</span>
               <span className="badge ok">{stats.paidTickets} payé{stats.paidTickets > 1 ? 's' : ''} → {stats.paidTickets} bille{stats.paidTickets > 1 ? 's' : ''}</span>
               <span className="badge ok">Revenu : {formatMoney(stats.revenue)}</span>
+              {selected.prizeValue > 0 && (
+                <span className={`badge ${stats.revenue - selected.prizeValue >= 0 ? 'ok' : 'closed'}`}>
+                  Bénéfice : {stats.revenue - selected.prizeValue >= 0 ? '+' : ''}{formatMoney(stats.revenue - selected.prizeValue)}
+                </span>
+              )}
             </div>
           )}
+          <label className="field" style={{ maxWidth: 260 }}>
+            <span className="label">Prix d'achat du lot ($)</span>
+            <input
+              className="input"
+              type="number"
+              min="0"
+              step="1000"
+              defaultValue={selected.prizeValue}
+              key={selected.id + ':' + selected.prizeValue}
+              onBlur={(e) => handleSetPrizeValue(selected, Number(e.target.value) || 0)}
+              placeholder="coût de la voiture"
+            />
+          </label>
 
           {/* Ajout ticket */}
           {selected.status === 'open' && (

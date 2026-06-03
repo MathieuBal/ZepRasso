@@ -931,3 +931,6 @@ tr:last-child td { border-bottom: 0; }
   border-color: rgba(124, 92, 255, 0.4);
 }
 .finance-card .money-big { font-size: 1.5rem; }
+
+/* Montant négatif (perte) */
+.money-neg { color: #ff7a8a; }

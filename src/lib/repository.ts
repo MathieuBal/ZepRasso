@@ -173,6 +173,7 @@ export type LotteryCreate = {
   prizeDescription?: string;
   prizeImageUrl?: string;
   ticketPrice: number;
+  prizeValue: number;
   maxTicketsPerBuyer: number;
 };
 
