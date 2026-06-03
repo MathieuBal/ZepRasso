@@ -634,6 +634,7 @@ app.post('/api/lotteries', requireAdmin, (req, res) => {
     prizeDescription: body.prizeDescription,
     prizeImageUrl,
     ticketPrice: body.ticketPrice,
+    prizeValue: body.prizeValue,
     maxTicketsPerBuyer: body.maxTicketsPerBuyer,
     status: 'open',
   });
@@ -650,6 +651,7 @@ app.patch('/api/lotteries/:id', requireAdmin, (req, res) => {
   if (typeof body.name === 'string' && body.name.trim()) lottery.name = body.name.trim();
   if (typeof body.prizeDescription === 'string') lottery.prizeDescription = body.prizeDescription.trim() || undefined;
   if (typeof body.ticketPrice === 'number' && body.ticketPrice >= 0) lottery.ticketPrice = Math.floor(body.ticketPrice);
+  if (typeof body.prizeValue === 'number' && body.prizeValue >= 0) lottery.prizeValue = Math.floor(body.prizeValue);
   if (typeof body.maxTicketsPerBuyer === 'number' && body.maxTicketsPerBuyer >= 1) lottery.maxTicketsPerBuyer = Math.floor(body.maxTicketsPerBuyer);
   if (['open', 'closed', 'drawn'].includes(body.status)) lottery.status = body.status;
   if (typeof body.prizeImageUrl === 'string' && body.prizeImageUrl.startsWith('data:')) {
@@ -793,6 +795,29 @@ app.post('/api/lotteries/:id/draw', requireAdmin, (req, res) => {
 
 app.get('/api/races', requireAdmin, (_req, res) => {
   res.json(db.races);
+});
+
+// Liste PUBLIQUE des courses ouvertes aux paris (aucune auth, aucune donnée
+// sensible). Renvoie juste de quoi afficher la liste : nom, description,
+// nombre de pilotes et pot des paris PAYÉS. C'est le pendant public de
+// GET /api/races (admin).
+app.get('/api/races/public-list', (_req, res) => {
+  const open = db.races.filter((r) => r.bettingStatus === 'open');
+  const list = open.map((race) => {
+    const pot = db.raceBets
+      .filter((b) => b.raceId === race.id && b.hasPaid)
+      .reduce((sum, b) => sum + b.amount, 0);
+    const pilotsCount = db.racePilots.filter((p) => p.raceId === race.id).length;
+    return {
+      id: race.id,
+      name: race.name,
+      description: race.description,
+      bettingStatus: race.bettingStatus,
+      pilotsCount,
+      pot,
+    };
+  });
+  res.json(list);
 });
 
 app.post('/api/races', requireAdmin, (req, res) => {

@@ -40,19 +40,24 @@ export default function FinancePanel({ reloadKey = 0 }: Props) {
       {/* Chiffres clés */}
       <div className="finance-grid">
         <div className="finance-card highlight">
-          <p className="section-eyebrow">Ta part organisateur</p>
+          <p className="section-eyebrow">Bénéfice net</p>
+          <span className={`money money-big ${totals.netProfit < 0 ? 'money-neg' : ''}`}>{formatMoney(totals.netProfit)}</span>
+          <p className="muted" style={{ margin: 0, fontSize: '0.78rem' }}>ce que tu gardes après achat des lots</p>
+        </div>
+        <div className="finance-card">
+          <p className="section-eyebrow">Encaissé (brut)</p>
           <span className="money money-big">{formatMoney(totals.orgaTake)}</span>
-          <p className="muted" style={{ margin: 0, fontSize: '0.78rem' }}>ce que tu gardes au total</p>
+          <p className="muted" style={{ margin: 0, fontSize: '0.78rem' }}>ta part avant coût des lots</p>
+        </div>
+        <div className="finance-card">
+          <p className="section-eyebrow">Coût des lots</p>
+          <span className="money money-big">{formatMoney(totals.costs)}</span>
+          <p className="muted" style={{ margin: 0, fontSize: '0.78rem' }}>voitures achetées (loteries)</p>
         </div>
         <div className="finance-card">
           <p className="section-eyebrow">À redistribuer</p>
           <span className="money money-big">{formatMoney(totals.toPayOut)}</span>
           <p className="muted" style={{ margin: 0, fontSize: '0.78rem' }}>gains podiums + paris à verser</p>
-        </div>
-        <div className="finance-card">
-          <p className="section-eyebrow">Total brassé</p>
-          <span className="money money-big">{formatMoney(totals.grossHandled)}</span>
-          <p className="muted" style={{ margin: 0, fontSize: '0.78rem' }}>argent total qui a circulé</p>
         </div>
       </div>
 
@@ -82,7 +87,17 @@ export default function FinancePanel({ reloadKey = 0 }: Props) {
 
               {hasLotteries && lotteries.detail.map((l) => (
                 <tr key={l.id}>
-                  <td><strong>Loterie</strong> · {l.name}<br /><span className="muted" style={{ fontSize: '0.8rem' }}>{l.paidTickets} ticket(s) payé(s){l.status === 'drawn' ? ' · tirée' : ''}</span></td>
+                  <td>
+                    <strong>Loterie</strong> · {l.name}
+                    <br /><span className="muted" style={{ fontSize: '0.8rem' }}>
+                      {l.paidTickets} ticket(s) payé(s){l.status === 'drawn' ? ' · tirée' : ''}
+                      {l.cost > 0 && (
+                        <> · coût voiture {formatMoney(l.cost)} → bénéfice{' '}
+                          <strong className={l.profit < 0 ? 'money-neg' : ''}>{l.profit >= 0 ? '+' : ''}{formatMoney(l.profit)}</strong>
+                        </>
+                      )}
+                    </span>
+                  </td>
                   <td style={{ fontFamily: 'monospace' }}>{formatMoney(l.revenue)}</td>
                   <td style={{ fontFamily: 'monospace' }}>{formatMoney(l.revenue)}</td>
                   <td style={{ fontFamily: 'monospace', color: 'var(--text-3)' }}>—</td>

@@ -173,6 +173,7 @@ export type LotteryCreate = {
   prizeDescription?: string;
   prizeImageUrl?: string;
   ticketPrice: number;
+  prizeValue: number;
   maxTicketsPerBuyer: number;
 };
 
@@ -224,6 +225,21 @@ export function drawLottery(id: string): Promise<{ winner: LotteryEntry }> {
 
 export function getRaces(): Promise<Race[]> {
   return api<Race[]>('/races', { headers: adminHeaders() });
+}
+
+// Liste PUBLIQUE des courses ouvertes aux paris : ce que voient les visiteurs
+// dans la page /races. Aucune auth, montants déjà payés uniquement.
+export type PublicRaceListItem = {
+  id: string;
+  name: string;
+  description?: string;
+  bettingStatus: 'open';
+  pilotsCount: number;
+  pot: number;
+};
+
+export function getRacesPublicList(): Promise<PublicRaceListItem[]> {
+  return api<PublicRaceListItem[]>('/races/public-list');
 }
 
 export type RaceCreate = {

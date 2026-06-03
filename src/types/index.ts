@@ -37,6 +37,7 @@ export type Lottery = {
   prizeDescription?: string;
   prizeImageUrl?: string;
   ticketPrice: number;
+  prizeValue: number;
   maxTicketsPerBuyer: number;
   status: LotteryStatus;
   winnerEntryNumber?: number;
@@ -226,8 +227,10 @@ export type FinanceSummary = {
     categories: CategoryPool[];
   };
   lotteries: {
-    detail: { id: string; name: string; revenue: number; paidTickets: number; status: string }[];
+    detail: { id: string; name: string; revenue: number; cost: number; profit: number; paidTickets: number; status: string }[];
     revenue: number;
+    cost: number;
+    profit: number;
   };
   races: {
     id: string;
@@ -246,6 +249,8 @@ export type FinanceSummary = {
     orgaTake: number;
     toPayOut: number;
     grossHandled: number;
+    costs: number;
+    netProfit: number;
   };
 };
 

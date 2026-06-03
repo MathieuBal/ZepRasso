@@ -1,8 +1,8 @@
-import { Car, ClipboardList, Home, QrCode, Shield, Trophy, UserRound } from 'lucide-react';
+import { Car, ClipboardList, Home, QrCode, Shield, Timer, Trophy, UserRound } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import { getStoredPseudo, isAdminUnlocked } from '../lib/localSession';
-import { getEvent } from '../lib/repository';
+import { getEvent, getRacesPublicList } from '../lib/repository';
 import { usePolling } from '../lib/usePolling';
 import type { EventStatus } from '../types';
 
@@ -14,23 +14,28 @@ export default function Layout({ children }: LayoutProps) {
   const pseudo = getStoredPseudo();
   const adminMode = isAdminUnlocked();
   const [status, setStatus] = useState<EventStatus | null>(null);
+  const [racesOpen, setRacesOpen] = useState(0);
 
-  // Suivi léger de la phase pour adapter la nav (lien d'inscription).
-  const loadStatus = useCallback(() => {
-    getEvent().then((event) => setStatus(event.status)).catch(() => { /* nav reste inchangée */ });
+  // Suivi léger : phase de l'event (lien d'inscription) + nb de courses
+  // ouvertes aux paris (onglet « Paris »). Une seule boucle, peu fréquente.
+  const loadNav = useCallback(() => {
+    getEvent().then((event) => setStatus(event.status)).catch(() => { /* nav inchangée */ });
+    getRacesPublicList().then((races) => setRacesOpen(races.length)).catch(() => { /* idem */ });
   }, []);
-  usePolling(loadStatus, 15000);
+  usePolling(loadNav, 15000);
 
   const registrationsOpen = status === 'registrations';
+  const betsOpen = racesOpen > 0;
 
   // Onglets visiteur principaux — repris en bas d'écran sur mobile (.tabbar)
   // et dans la barre du haut sur desktop (.nav-core).
   const coreTabs = [
-    { to: '/', label: 'Accueil', Icon: Home, end: true },
-    { to: '/vehicles', label: 'Véhicules', Icon: Car, end: false },
-    { to: '/results', label: 'Podium', Icon: Trophy, end: false },
-    { to: '/login', label: pseudo || 'Pseudo', Icon: UserRound, end: false },
-  ];
+    { to: '/', label: 'Accueil', Icon: Home, end: true, show: true },
+    { to: '/vehicles', label: 'Véhicules', Icon: Car, end: false, show: true },
+    { to: '/races', label: 'Paris', Icon: Timer, end: false, show: betsOpen },
+    { to: '/results', label: 'Podium', Icon: Trophy, end: false, show: true },
+    { to: '/login', label: pseudo || 'Pseudo', Icon: UserRound, end: false, show: true },
+  ].filter((t) => t.show);
 
   return (
     <main className="app-shell">

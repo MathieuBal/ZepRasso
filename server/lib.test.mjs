@@ -483,7 +483,7 @@ describe('computeFinanceSummary', () => {
 
   it('handles an empty db gracefully', () => {
     const r = computeFinanceSummary({ event: { entryFee: 0 } });
-    expect(r.totals).toEqual({ orgaTake: 0, toPayOut: 0, grossHandled: 0 });
+    expect(r.totals).toEqual({ orgaTake: 0, toPayOut: 0, grossHandled: 0, costs: 0, netProfit: 0 });
   });
 });
 
