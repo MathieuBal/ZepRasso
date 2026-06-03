@@ -1,6 +1,7 @@
-import { Download, QrCode, RefreshCw, Shield, Trash2, Upload } from 'lucide-react';
+import { ArrowRight, CheckCircle2, Coins, Download, QrCode, RefreshCw, Ticket, Timer, Trash2, Upload } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import AdminShell, { type AdminSectionId } from '../components/AdminShell';
 import ImagePicker from '../components/ImagePicker';
 import FinancePanel from '../components/FinancePanel';
 import LotteriesPanel from '../components/LotteriesPanel';
@@ -37,6 +38,13 @@ const STATUS_LABEL: Record<EventStatus, string> = {
   closed: 'Clôturé',
 };
 
+const PHASES: { id: EventStatus; n: string; name: string }[] = [
+  { id: 'draft', n: '01', name: 'Brouillon' },
+  { id: 'registrations', n: '02', name: 'Inscriptions' },
+  { id: 'voting', n: '03', name: 'Votes' },
+  { id: 'closed', n: '04', name: 'Clôturé' },
+];
+
 const initialForm = {
   name: '',
   ownerName: '',
@@ -51,6 +59,7 @@ const initialForm = {
 export default function AdminPage() {
   const [unlocked, setUnlocked] = useState(isAdminUnlocked());
   const [code, setCode] = useState('');
+  const [section, setSection] = useState<AdminSectionId>('overview');
   const [rassoEvent, setRassoEvent] = useState<RassoEvent | null>(null);
   const [eventName, setEventName] = useState('');
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
@@ -67,8 +76,6 @@ export default function AdminPage() {
   const paidCount = participants.filter((p) => p.hasPaid).length;
   const entryFee = rassoEvent?.entryFee ?? 0;
   const prize = useMemo(() => computePrizePool(paidCount, entryFee), [paidCount, entryFee]);
-  // Cagnottes par catégorie : chaque participant payé alimente le pot de la
-  // catégorie de son véhicule. Calculé localement (l'admin a déjà les données).
   const categoryPools = useMemo(() => {
     const catByParticipant = new Map<string, string>();
     vehicles.forEach((v) => { if (v.participantId) catByParticipant.set(v.participantId, (v.category || '').trim()); });
@@ -84,7 +91,6 @@ export default function AdminPage() {
       .sort((a, b) => b.pool - a.pool);
   }, [vehicles, participants, entryFee]);
   const usesCategories = categoryPools.length > 1;
-  // Participants déjà rattachés à un véhicule (pour l'avertissement "soft").
   const linkedParticipantIds = useMemo(
     () => new Set(vehicles.map((v) => v.participantId).filter(Boolean) as string[]),
     [vehicles],
@@ -114,9 +120,6 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (!unlocked) return;
-    // Si le code admin stocké a changé côté serveur (ex. nouvel ADMIN_CODE
-    // dans le .env), on relâche le verrou plutôt que d'afficher un panneau
-    // qui renverra 401 sur chaque action.
     let cancelled = false;
     (async () => {
       const stored = getAdminCode();
@@ -222,7 +225,6 @@ export default function AdminPage() {
   async function handleAddVehicle(event: React.FormEvent) {
     event.preventDefault();
     setError(null);
-    // Si un participant inscrit est sélectionné, son pseudo sert de propriétaire.
     const linked = participants.find((p) => p.id === selectedParticipantId);
     const ownerName = linked ? linked.pseudo : form.ownerName.trim();
     if (!form.name.trim() || !ownerName) {
@@ -326,10 +328,11 @@ export default function AdminPage() {
     URL.revokeObjectURL(url);
   }
 
+  // ── Écran de déverrouillage (inchangé) ───────────────────────────────────
   if (!unlocked) {
     return (
       <section className="grid two">
-        <PageHeader title="Admin" badge={<><Shield size={16} /> Organisateur</>} badgeTone="wait">
+        <PageHeader title="Admin" badge={<>Organisateur</>} badgeTone="wait">
           <p className="lead">Accès réservé à l'organisateur pour gérer les véhicules et consulter les résultats.</p>
         </PageHeader>
         <div className="panel">
@@ -346,211 +349,254 @@ export default function AdminPage() {
     );
   }
 
-  return (
-    <section className="grid">
-      <div className="card page-header">
+  const status = rassoEvent?.status ?? 'draft';
+  const curPhaseIdx = PHASES.findIndex((p) => p.id === status);
+  const unpaidCount = participants.length - paidCount;
+  const disqCount = vehicles.filter((v) => v.isDisqualified).length;
+  const rankedActive = scores.filter((s) => !s.vehicle.isDisqualified);
+
+  // ── Sections (JSX construit inline, capture l'état/handlers par closure) ──
+
+  const notice = (message || error) ? (
+    <div>
+      {message && <p className="success">{message}</p>}
+      {error && <p className="error">{error}</p>}
+    </div>
+  ) : null;
+
+  const overviewSection = (
+    <div className="stack" style={{ display: 'grid', gap: 16 }}>
+      {/* Rail de phase */}
+      <div className="panel">
         <div className="between">
-          <span className="badge ok"><Shield size={16} /> Admin ouvert</span>
-          <button className="button ghost" onClick={handleLock}>Verrouiller</button>
+          <div><p className="section-eyebrow">Phase de l'événement</p><h2>{rassoEvent?.name || 'Rasso'}</h2></div>
+          <button className="button primary" type="button" onClick={() => setSection('event')}>Gérer la phase</button>
         </div>
-        <h1 className="page-title gradient-text">Gestion du rasso</h1>
-        <p className="lead">Ajoute les véhicules, suis les votes en direct et exporte le classement final.</p>
-        {message && <p className="success">{message}</p>}
-        {error && <p className="error">{error}</p>}
+        <div className="phase-rail" style={{ marginTop: 14 }}>
+          {PHASES.map((ph, i) => (
+            <div key={ph.id} className={`phase-step ${i < curPhaseIdx ? 'done' : i === curPhaseIdx ? 'current' : ''}`}>
+              <div className="ps-n">{ph.n}{i < curPhaseIdx ? ' · fait' : i === curPhaseIdx ? ' · en cours' : ''}</div>
+              <div className="ps-name">{ph.name}</div>
+            </div>
+          ))}
+        </div>
       </div>
 
-      <FinancePanel reloadKey={votes.length + vehicles.length + participants.length} />
-
-      <div className="panel grid">
-        <div className="between">
-          <div>
-            <p className="section-eyebrow">Événement</p>
-            <h2>{rassoEvent?.name || 'Rasso'}</h2>
-          </div>
-          <span className={rassoEvent?.status === 'closed' ? 'badge closed' : rassoEvent?.status === 'voting' ? 'badge ok' : 'badge wait'}>
-            {rassoEvent ? STATUS_LABEL[rassoEvent.status] : '—'}
-          </span>
-        </div>
-
-        <form className="form" onSubmit={handleRenameEvent}>
-          <label className="field">
-            <span className="label">Nom de l'événement</span>
-            <input className="input" value={eventName} onChange={(e) => setEventName(e.target.value)} placeholder="Ex : Car Meet RP - Été" />
-          </label>
-          <div className="actions">
-            <button className="button" type="submit">Renommer</button>
-          </div>
-        </form>
-
-        <hr className="divider" />
-        <p className="section-eyebrow">Phase de l'événement</p>
-        <p className="muted" style={{ marginTop: -4 }}>
-          Brouillon → Inscriptions → Votes → Clôturé. Les inscriptions ne sont possibles qu'en phase « Inscriptions », les votes qu'en phase « Votes ».
-        </p>
-        <div className="actions">
-          {rassoEvent?.status === 'draft' && (
-            <button className="button primary" type="button" onClick={() => changeStatus('registrations')}>Ouvrir les inscriptions</button>
-          )}
-          {rassoEvent?.status === 'registrations' && (
-            <>
-              <button className="button primary" type="button" onClick={() => changeStatus('voting', 'Fermer les inscriptions et ouvrir les votes ?')}>Fermer inscriptions → ouvrir votes</button>
-              <button className="button ghost" type="button" onClick={() => changeStatus('draft', 'Revenir en brouillon ? Les inscriptions seront fermées.')}>Revenir en brouillon</button>
-            </>
-          )}
-          {rassoEvent?.status === 'voting' && (
-            <>
-              <button className="button primary" type="button" onClick={() => changeStatus('closed', 'Clôturer l\'événement ? Les votes seront définitifs.')}>Clôturer l'événement</button>
-              <button className="button ghost" type="button" onClick={() => changeStatus('registrations', 'Rouvrir les inscriptions ? Les votes seront suspendus.')}>Rouvrir les inscriptions</button>
-            </>
-          )}
-          {rassoEvent?.status === 'closed' && (
-            <button className="button" type="button" onClick={() => changeStatus('voting', 'Rouvrir les votes ?')}>Rouvrir les votes</button>
-          )}
-        </div>
-
-        <hr className="divider" />
-        <form className="form" onSubmit={handleSaveEntryFee}>
-          <label className="field">
-            <span className="label">Prix d'inscription ($)</span>
-            <input className="input" type="number" min="0" step="1000" value={entryFeeInput} onChange={(e) => setEntryFeeInput(e.target.value)} placeholder="Ex : 100000" />
-          </label>
-          <div className="actions">
-            <button className="button" type="submit">Enregistrer le tarif</button>
-          </div>
-        </form>
+      {/* KPIs */}
+      <div className="kpi-grid">
+        <div className="kpi c"><div className="k-label">Participants</div><div className="k-num">{paidCount}/{participants.length}</div><div className="k-sub">payés / inscrits</div></div>
+        <div className="kpi"><div className="k-label">Véhicules</div><div className="k-num">{vehicles.length}</div><div className="k-sub">{disqCount} disqualifié{disqCount > 1 ? 's' : ''}</div></div>
+        <div className="kpi m"><div className="k-label">Votes reçus</div><div className="k-num">{votes.length}</div><div className="k-sub">concours esthétique</div></div>
+        <div className="kpi c"><div className="k-label">Cagnotte concours</div><div className="k-num">{formatMoney(prize.pool)}</div><div className="k-sub">à reverser {formatMoney(prize.net)}</div></div>
       </div>
 
-      <div className="grid two">
+      <div className="cols-2">
+        {/* À traiter */}
         <div className="panel">
-          <p className="section-eyebrow">Inscription</p>
-          <h2>Ajouter un véhicule</h2>
-          <form className="form" onSubmit={handleAddVehicle}>
-            <label className="field">
-              <span className="label">Participant inscrit</span>
-              <select className="input" value={selectedParticipantId} onChange={(e) => setSelectedParticipantId(e.target.value)}>
-                <option value="">— Aucun (propriétaire libre) —</option>
-                {participants.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.pseudo}{linkedParticipantIds.has(p.id) ? ' (a déjà un véhicule)' : ''}{p.hasPaid ? '' : ' · non payé'}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {selectedParticipantId && linkedParticipantIds.has(selectedParticipantId) && (
-              <p className="notice">Ce participant a déjà un véhicule rattaché. Tu peux quand même en ajouter un second.</p>
+          <div className="between"><h2>À traiter</h2></div>
+          <div className="stack" style={{ display: 'grid', gap: 10, marginTop: 12 }}>
+            {unpaidCount > 0 ? (
+              <div className="todo-item warn">
+                <div className="ico"><Coins size={16} /></div>
+                <div className="txt"><b>{unpaidCount} participant{unpaidCount > 1 ? 's' : ''}</b> non payé{unpaidCount > 1 ? 's' : ''} — à relancer</div>
+                <button className="button ghost b-spacer" type="button" onClick={() => setSection('participants')}>Voir</button>
+              </div>
+            ) : (
+              <div className="todo-item info"><div className="ico"><CheckCircle2 size={16} /></div><div className="txt">Tous les participants inscrits ont payé.</div></div>
             )}
-            <label className="field"><span className="label">Nom du véhicule *</span><input className="input" required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
-            {!selectedParticipantId && (
-              <label className="field"><span className="label">Propriétaire *</span><input className="input" value={form.ownerName} onChange={(e) => setForm({ ...form, ownerName: e.target.value })} /></label>
-            )}
-            <label className="field"><span className="label">Catégorie</span><input className="input" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} placeholder="JDM, Sportive, Luxe..." /></label>
-            <label className="field"><span className="label">Plaque</span><input className="input" value={form.plate} onChange={(e) => setForm({ ...form, plate: e.target.value })} /></label>
-            <ImagePicker value={form.imageUrl || undefined} onChange={(value) => setForm({ ...form, imageUrl: value || '' })} />
-            <label className="field"><span className="label">…ou coller une URL d'image</span><input className="input" value={form.imageUrl.startsWith('data:') ? '' : form.imageUrl} onChange={(e) => setForm({ ...form, imageUrl: e.target.value })} placeholder="https://..." /></label>
-            <label className="field"><span className="label">Description</span><textarea className="textarea" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></label>
-            {error && <p className="error">{error}</p>}
-            {message && <p className="success">{message}</p>}
-            <button className="button primary" type="submit">Ajouter le véhicule</button>
-          </form>
+            <div className="todo-item info">
+              <div className="ico"><Timer size={16} /></div>
+              <div className="txt">Valide les <b>paris payés</b> dans Courses &amp; paris</div>
+              <button className="button ghost b-spacer" type="button" onClick={() => setSection('races')}>Voir</button>
+            </div>
+            <div className="todo-item info">
+              <div className="ico"><Ticket size={16} /></div>
+              <div className="txt">Encaisse et tire la <b>loterie</b></div>
+              <button className="button ghost b-spacer" type="button" onClick={() => setSection('lotteries')}>Voir</button>
+            </div>
+          </div>
         </div>
 
-        <div className="panel grid">
-          <p className="section-eyebrow">Outils</p>
-          <h2>Actions rapides</h2>
-          <button className="button" onClick={() => run(refresh)}><RefreshCw size={16} /> Rafraîchir</button>
-          <Link className="button" to="/qr"><QrCode size={16} /> QR code du rasso</Link>
-          <button className="button" onClick={exportCsv}>Exporter CSV</button>
-          <hr className="divider" />
-          <p className="section-eyebrow">Sauvegarde</p>
-          <button className="button" onClick={handleDownloadBackup}><Download size={16} /> Télécharger une sauvegarde</button>
-          <button className="button" onClick={() => backupInputRef.current?.click()}><Upload size={16} /> Restaurer une sauvegarde</button>
-          <input ref={backupInputRef} type="file" accept="application/json,.json" hidden onChange={handleRestoreFile} />
-          <p className="muted">Des sauvegardes automatiques sont aussi gardées sur le PC (dossier <code>data/backups/</code>).</p>
-          <hr className="divider" />
-          <p className="section-eyebrow">Zone sensible</p>
-          <button className="button danger" onClick={handleResetVotes}><Trash2 size={16} /> Supprimer les votes</button>
+        {/* Tête du classement */}
+        <div className="panel">
+          <div className="between"><h2>Tête du classement</h2><button className="button ghost" type="button" onClick={() => setSection('results')}>Tout voir <ArrowRight size={14} /></button></div>
+          {rankedActive.length === 0 ? (
+            <p className="muted" style={{ marginTop: 12 }}>Aucun vote pour l'instant.</p>
+          ) : (
+            <div className="stack" style={{ display: 'grid', gap: 8, marginTop: 12 }}>
+              {rankedActive.slice(0, 4).map((s, i) => (
+                <div key={s.vehicle.id} style={{ display: 'grid', gridTemplateColumns: '24px 1fr auto', gap: 12, alignItems: 'center' }}>
+                  <div style={{ fontFamily: 'var(--f-display)', fontWeight: 800, fontSize: 18, color: i === 0 ? 'var(--gold)' : i === 1 ? 'var(--silver)' : i === 2 ? 'var(--bronze)' : 'var(--text-3)' }}>{i + 1}</div>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.vehicle.name}</div>
+                    <div className="muted" style={{ fontSize: 12 }}>{s.vehicle.ownerName} · {s.voteCount} votes</div>
+                  </div>
+                  <div style={{ fontFamily: 'var(--f-display)', fontWeight: 800, fontSize: 20 }}>{s.average.toFixed(1)}</div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
+    </div>
+  );
 
-      <div className="panel grid">
-        <p className="section-eyebrow">Inscriptions</p>
-        <h2>Participants & paiements</h2>
-        <div className="actions">
-          <span className="badge wait">{participants.length} inscrit{participants.length > 1 ? 's' : ''}</span>
-          <span className="badge ok">{paidCount} payé{paidCount > 1 ? 's' : ''}</span>
-          <span className="badge ok">Cagnotte : {formatMoney(prize.pool)}</span>
-          <span className="badge wait">Part orga (10 %) : {formatMoney(prize.orgaCut)}</span>
+  const eventSection = (
+    <div className="panel grid">
+      <div className="between">
+        <div><p className="section-eyebrow">Événement</p><h2>{rassoEvent?.name || 'Rasso'}</h2></div>
+        <span className={status === 'closed' ? 'badge closed' : status === 'voting' ? 'badge ok' : 'badge wait'}>
+          {rassoEvent ? STATUS_LABEL[status] : '—'}
+        </span>
+      </div>
+
+      <form className="form" onSubmit={handleRenameEvent}>
+        <label className="field">
+          <span className="label">Nom de l'événement</span>
+          <input className="input" value={eventName} onChange={(e) => setEventName(e.target.value)} placeholder="Ex : Car Meet RP - Été" />
+        </label>
+        <div className="actions"><button className="button" type="submit">Renommer</button></div>
+      </form>
+
+      <hr className="divider" />
+      <p className="section-eyebrow">Phase de l'événement</p>
+      <p className="muted" style={{ marginTop: -4 }}>
+        Brouillon → Inscriptions → Votes → Clôturé. Les inscriptions ne sont possibles qu'en phase « Inscriptions », les votes qu'en phase « Votes ».
+      </p>
+      <div className="actions">
+        {status === 'draft' && (
+          <button className="button primary" type="button" onClick={() => changeStatus('registrations')}>Ouvrir les inscriptions</button>
+        )}
+        {status === 'registrations' && (
+          <>
+            <button className="button primary" type="button" onClick={() => changeStatus('voting', 'Fermer les inscriptions et ouvrir les votes ?')}>Fermer inscriptions → ouvrir votes</button>
+            <button className="button ghost" type="button" onClick={() => changeStatus('draft', 'Revenir en brouillon ? Les inscriptions seront fermées.')}>Revenir en brouillon</button>
+          </>
+        )}
+        {status === 'voting' && (
+          <>
+            <button className="button primary" type="button" onClick={() => changeStatus('closed', 'Clôturer l\'événement ? Les votes seront définitifs.')}>Clôturer l'événement</button>
+            <button className="button ghost" type="button" onClick={() => changeStatus('registrations', 'Rouvrir les inscriptions ? Les votes seront suspendus.')}>Rouvrir les inscriptions</button>
+          </>
+        )}
+        {status === 'closed' && (
+          <button className="button" type="button" onClick={() => changeStatus('voting', 'Rouvrir les votes ?')}>Rouvrir les votes</button>
+        )}
+      </div>
+
+      <hr className="divider" />
+      <form className="form" onSubmit={handleSaveEntryFee}>
+        <label className="field">
+          <span className="label">Prix d'inscription ($)</span>
+          <input className="input" type="number" min="0" step="1000" value={entryFeeInput} onChange={(e) => setEntryFeeInput(e.target.value)} placeholder="Ex : 100000" />
+        </label>
+        <div className="actions"><button className="button" type="submit">Enregistrer le tarif</button></div>
+      </form>
+    </div>
+  );
+
+  const participantsSection = (
+    <div className="panel grid">
+      <p className="section-eyebrow">Inscriptions</p>
+      <h2>Participants & paiements</h2>
+      <div className="actions">
+        <span className="badge wait">{participants.length} inscrit{participants.length > 1 ? 's' : ''}</span>
+        <span className="badge ok">{paidCount} payé{paidCount > 1 ? 's' : ''}</span>
+        <span className="badge ok">Cagnotte : {formatMoney(prize.pool)}</span>
+        <span className="badge wait">Part orga (10 %) : {formatMoney(prize.orgaCut)}</span>
+      </div>
+      {usesCategories ? (
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>Catégorie</th><th>Payés</th><th>Cagnotte</th><th>🥇 / 🥈 / 🥉</th></tr></thead>
+            <tbody>
+              {categoryPools.map((c) => (
+                <tr key={c.category || '__general__'}>
+                  <td><strong>{c.category || 'Général'}</strong></td>
+                  <td>{c.count}</td>
+                  <td style={{ fontFamily: 'monospace' }}>{formatMoney(c.pool)}</td>
+                  <td style={{ fontFamily: 'monospace' }}>{formatMoney(c.podium.first)} / {formatMoney(c.podium.second)} / {formatMoney(c.podium.third)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-        {usesCategories ? (
-          <div className="table-wrap">
-            <table>
-              <thead><tr><th>Catégorie</th><th>Payés</th><th>Cagnotte</th><th>🥇 / 🥈 / 🥉</th></tr></thead>
-              <tbody>
-                {categoryPools.map((c) => (
-                  <tr key={c.category || '__general__'}>
-                    <td><strong>{c.category || 'Général'}</strong></td>
-                    <td>{c.count}</td>
-                    <td style={{ fontFamily: 'monospace' }}>{formatMoney(c.pool)}</td>
-                    <td style={{ fontFamily: 'monospace' }}>{formatMoney(c.podium.first)} / {formatMoney(c.podium.second)} / {formatMoney(c.podium.third)}</td>
+      ) : (
+        <p className="muted" style={{ marginTop: -4 }}>
+          Répartition du net ({formatMoney(prize.net)}) sur le podium :
+          {' '}🥇 {formatMoney(prize.podium.first)} · 🥈 {formatMoney(prize.podium.second)} · 🥉 {formatMoney(prize.podium.third)}.
+        </p>
+      )}
+      {participants.length === 0 ? (
+        <p className="muted">Aucune inscription pour l'instant. Ouvre la phase « Inscriptions » pour que les concurrents s'inscrivent.</p>
+      ) : (
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>Pseudo</th><th>Contact</th><th>Véhicule</th><th>Payé</th><th>Moyen</th><th></th></tr></thead>
+            <tbody>
+              {participants.map((p) => {
+                const linkedVehicle = vehicleByParticipant.get(p.id);
+                return (
+                  <tr key={p.id}>
+                    <td><strong>{p.pseudo}</strong></td>
+                    <td>{p.contactInfo || <span className="muted">—</span>}</td>
+                    <td>{linkedVehicle ? linkedVehicle.name : <span className="muted">non rattaché</span>}</td>
+                    <td>
+                      <button className={p.hasPaid ? 'button ok' : 'button ghost'} onClick={() => handleTogglePaid(p)}>
+                        {p.hasPaid ? '✓ Payé' : 'Non payé'}
+                      </button>
+                    </td>
+                    <td>
+                      <select className="input" value={p.paymentMethod || ''} onChange={(e) => handlePaymentMethod(p, (e.target.value || null) as PaymentMethod | null)}>
+                        <option value="">—</option>
+                        <option value="cash">Cash</option>
+                        <option value="virement">Virement</option>
+                      </select>
+                    </td>
+                    <td className="actions">
+                      <button className="button danger" onClick={() => handleDeleteParticipant(p)}>Retirer</button>
+                    </td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <p className="muted" style={{ marginTop: -4 }}>
-            Répartition du net ({formatMoney(prize.net)}) sur le podium :
-            {' '}🥇 {formatMoney(prize.podium.first)} · 🥈 {formatMoney(prize.podium.second)} · 🥉 {formatMoney(prize.podium.third)}.
-            {scores.length > 0 && (
-              <>
-                {' '}Actuellement :
-                {scores[0] && <> 🥇 <strong>{scores[0].vehicle.name}</strong></>}
-                {scores[1] && <> · 🥈 <strong>{scores[1].vehicle.name}</strong></>}
-                {scores[2] && <> · 🥉 <strong>{scores[2].vehicle.name}</strong></>}.
-              </>
-            )}
-          </p>
-        )}
-        {participants.length === 0 ? (
-          <p className="muted">Aucune inscription pour l'instant. Ouvre la phase « Inscriptions » pour que les concurrents s'inscrivent.</p>
-        ) : (
-          <div className="table-wrap">
-            <table>
-              <thead><tr><th>Pseudo</th><th>Contact</th><th>Véhicule</th><th>Payé</th><th>Moyen</th><th></th></tr></thead>
-              <tbody>
-                {participants.map((p) => {
-                  const linkedVehicle = vehicleByParticipant.get(p.id);
-                  return (
-                    <tr key={p.id}>
-                      <td><strong>{p.pseudo}</strong></td>
-                      <td>{p.contactInfo || <span className="muted">—</span>}</td>
-                      <td>{linkedVehicle ? linkedVehicle.name : <span className="muted">non rattaché</span>}</td>
-                      <td>
-                        <button className={p.hasPaid ? 'button ok' : 'button ghost'} onClick={() => handleTogglePaid(p)}>
-                          {p.hasPaid ? '✓ Payé' : 'Non payé'}
-                        </button>
-                      </td>
-                      <td>
-                        <select
-                          className="input"
-                          value={p.paymentMethod || ''}
-                          onChange={(e) => handlePaymentMethod(p, (e.target.value || null) as PaymentMethod | null)}
-                        >
-                          <option value="">—</option>
-                          <option value="cash">Cash</option>
-                          <option value="virement">Virement</option>
-                        </select>
-                      </td>
-                      <td className="actions">
-                        <button className="button danger" onClick={() => handleDeleteParticipant(p)}>Retirer</button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+
+  const vehiclesSection = (
+    <div className="grid two">
+      <div className="panel">
+        <p className="section-eyebrow">Inscription</p>
+        <h2>Ajouter un véhicule</h2>
+        <form className="form" onSubmit={handleAddVehicle}>
+          <label className="field">
+            <span className="label">Participant inscrit</span>
+            <select className="input" value={selectedParticipantId} onChange={(e) => setSelectedParticipantId(e.target.value)}>
+              <option value="">— Aucun (propriétaire libre) —</option>
+              {participants.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.pseudo}{linkedParticipantIds.has(p.id) ? ' (a déjà un véhicule)' : ''}{p.hasPaid ? '' : ' · non payé'}
+                </option>
+              ))}
+            </select>
+          </label>
+          {selectedParticipantId && linkedParticipantIds.has(selectedParticipantId) && (
+            <p className="notice">Ce participant a déjà un véhicule rattaché. Tu peux quand même en ajouter un second.</p>
+          )}
+          <label className="field"><span className="label">Nom du véhicule *</span><input className="input" required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
+          {!selectedParticipantId && (
+            <label className="field"><span className="label">Propriétaire *</span><input className="input" value={form.ownerName} onChange={(e) => setForm({ ...form, ownerName: e.target.value })} /></label>
+          )}
+          <label className="field"><span className="label">Catégorie</span><input className="input" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} placeholder="JDM, Sportive, Luxe..." /></label>
+          <label className="field"><span className="label">Plaque</span><input className="input" value={form.plate} onChange={(e) => setForm({ ...form, plate: e.target.value })} /></label>
+          <ImagePicker value={form.imageUrl || undefined} onChange={(value) => setForm({ ...form, imageUrl: value || '' })} />
+          <label className="field"><span className="label">…ou coller une URL d'image</span><input className="input" value={form.imageUrl.startsWith('data:') ? '' : form.imageUrl} onChange={(e) => setForm({ ...form, imageUrl: e.target.value })} placeholder="https://..." /></label>
+          <label className="field"><span className="label">Description</span><textarea className="textarea" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></label>
+          <button className="button primary" type="submit">Ajouter le véhicule</button>
+        </form>
       </div>
 
       <div className="panel grid">
@@ -577,72 +623,117 @@ export default function AdminPage() {
           </table>
         </div>
       </div>
+    </div>
+  );
 
-      <div className="panel grid">
-        <p className="section-eyebrow">Résultats</p>
-        <h2>Classement</h2>
-        <ResultsTable scores={scores} />
+  const resultsSection = (
+    <div className="panel grid">
+      <p className="section-eyebrow">Résultats</p>
+      <h2>Classement</h2>
+      <ResultsTable scores={scores} />
+    </div>
+  );
+
+  const antifraudSection = (
+    <div className="panel grid">
+      <p className="section-eyebrow">Contrôle</p>
+      <h2>Anti-triche</h2>
+      <p className="muted">Chaque appareil ne peut voter qu'une fois par véhicule, même en changeant de pseudo. Voici les signaux à surveiller.</p>
+      <div className="actions">
+        <span className="badge ok">{audit?.totalVotes ?? 0} votes</span>
+        <span className="badge wait">{audit?.distinctVoters ?? 0} appareils</span>
+        <span className="badge wait">{audit?.distinctIps ?? 0} adresses IP</span>
       </div>
 
-      <div className="panel grid">
-        <p className="section-eyebrow">Contrôle</p>
-        <h2>Anti-triche</h2>
-        <p className="muted">Chaque appareil ne peut voter qu'une fois par véhicule, même en changeant de pseudo. Voici les signaux à surveiller.</p>
-        <div className="actions">
-          <span className="badge ok">{audit?.totalVotes ?? 0} votes</span>
-          <span className="badge wait">{audit?.distinctVoters ?? 0} appareils</span>
-          <span className="badge wait">{audit?.distinctIps ?? 0} adresses IP</span>
+      <h3>Plusieurs appareils derrière une même IP</h3>
+      {audit && audit.sharedIps.length > 0 ? (
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>Adresse IP</th><th>Appareils</th><th>Pseudos</th></tr></thead>
+            <tbody>
+              {audit.sharedIps.map((row) => (
+                <tr key={row.ip}><td>{row.ip}</td><td>{row.voters}</td><td>{row.pseudos.join(', ')}</td></tr>
+              ))}
+            </tbody>
+          </table>
         </div>
+      ) : (
+        <p className="muted">Rien à signaler. (Note : un même foyer ou réseau partage parfois une IP, ce n'est pas forcément de la triche.)</p>
+      )}
 
-        <h3>Plusieurs appareils derrière une même IP</h3>
-        {audit && audit.sharedIps.length > 0 ? (
-          <div className="table-wrap">
-            <table>
-              <thead><tr><th>Adresse IP</th><th>Appareils</th><th>Pseudos</th></tr></thead>
-              <tbody>
-                {audit.sharedIps.map((row) => (
-                  <tr key={row.ip}>
-                    <td>{row.ip}</td>
-                    <td>{row.voters}</td>
-                    <td>{row.pseudos.join(', ')}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <p className="muted">Rien à signaler. (Note : un même foyer ou réseau partage parfois une IP, ce n'est pas forcément de la triche.)</p>
-        )}
+      <h3>Pseudo utilisé sur plusieurs appareils</h3>
+      {audit && audit.reusedPseudos.length > 0 ? (
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>Pseudo</th><th>Appareils</th></tr></thead>
+            <tbody>
+              {audit.reusedPseudos.map((row) => (
+                <tr key={row.pseudo}><td>{row.pseudo}</td><td>{row.devices}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className="muted">Rien à signaler.</p>
+      )}
+    </div>
+  );
 
-        <h3>Pseudo utilisé sur plusieurs appareils</h3>
-        {audit && audit.reusedPseudos.length > 0 ? (
-          <div className="table-wrap">
-            <table>
-              <thead><tr><th>Pseudo</th><th>Appareils</th></tr></thead>
-              <tbody>
-                {audit.reusedPseudos.map((row) => (
-                  <tr key={row.pseudo}>
-                    <td>{row.pseudo}</td>
-                    <td>{row.devices}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <p className="muted">Rien à signaler.</p>
-        )}
-      </div>
+  const toolsSection = (
+    <div className="panel grid">
+      <p className="section-eyebrow">Outils</p>
+      <h2>Actions rapides</h2>
+      <button className="button" onClick={() => run(refresh)}><RefreshCw size={16} /> Rafraîchir</button>
+      <Link className="button" to="/qr"><QrCode size={16} /> QR code du rasso</Link>
+      <button className="button" onClick={exportCsv}>Exporter CSV</button>
+      <hr className="divider" />
+      <p className="section-eyebrow">Sauvegarde</p>
+      <button className="button" onClick={handleDownloadBackup}><Download size={16} /> Télécharger une sauvegarde</button>
+      <button className="button" onClick={() => backupInputRef.current?.click()}><Upload size={16} /> Restaurer une sauvegarde</button>
+      <input ref={backupInputRef} type="file" accept="application/json,.json" hidden onChange={handleRestoreFile} />
+      <p className="muted">Des sauvegardes automatiques sont aussi gardées sur le PC (dossier <code>data/backups/</code>).</p>
+      <hr className="divider" />
+      <p className="section-eyebrow">Zone sensible</p>
+      <button className="button danger" onClick={handleResetVotes}><Trash2 size={16} /> Supprimer les votes</button>
+    </div>
+  );
 
-      <LotteriesPanel
-        onMessage={(t) => { setError(null); setMessage(t); }}
-        onError={(t) => { setMessage(null); setError(t); }}
-      />
+  const financeSection = <FinancePanel reloadKey={votes.length + vehicles.length + participants.length} />;
+  const lotteriesSection = (
+    <LotteriesPanel
+      onMessage={(t) => { setError(null); setMessage(t); }}
+      onError={(t) => { setMessage(null); setError(t); }}
+    />
+  );
+  const racesSection = (
+    <RacesPanel
+      onMessage={(t) => { setError(null); setMessage(t); }}
+      onError={(t) => { setMessage(null); setError(t); }}
+    />
+  );
 
-      <RacesPanel
-        onMessage={(t) => { setError(null); setMessage(t); }}
-        onError={(t) => { setMessage(null); setError(t); }}
-      />
-    </section>
+  return (
+    <AdminShell
+      active={section}
+      onNavigate={setSection}
+      eventName={rassoEvent?.name ?? 'Rasso'}
+      status={status}
+      counts={{ participants: participants.length, vehicles: vehicles.length }}
+      notice={notice}
+      onLock={handleLock}
+      onRefresh={() => run(refresh)}
+      sections={{
+        overview: overviewSection,
+        event: eventSection,
+        participants: participantsSection,
+        vehicles: vehiclesSection,
+        results: resultsSection,
+        races: racesSection,
+        lotteries: lotteriesSection,
+        finance: financeSection,
+        antifraud: antifraudSection,
+        tools: toolsSection,
+      }}
+    />
   );
 }
