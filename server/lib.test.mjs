@@ -95,9 +95,11 @@ describe('normalizeVote', () => {
 describe('normalizeDb', () => {
   it('returns a clean default when parsed is empty', () => {
     const db = normalizeDb({}, NOW);
-    expect(db.event.id).toBe('rasso');
-    expect(db.event.status).toBe('draft');
-    expect(db.event.entryFee).toBe(0);
+    expect(db.events).toHaveLength(1);
+    expect(db.events[0].id).toBe('rasso');
+    expect(db.events[0].status).toBe('draft');
+    expect(db.events[0].entryFee).toBe(0);
+    expect(db.activeEventId).toBe('rasso');
     expect(db.vehicles).toEqual([]);
     expect(db.votes).toEqual([]);
     expect(db.participants).toEqual([]);
@@ -105,12 +107,12 @@ describe('normalizeDb', () => {
 
   it('migrates the legacy "open" status to "voting"', () => {
     const db = normalizeDb({ event: { name: 'X', status: 'open' } }, NOW);
-    expect(db.event.status).toBe('voting');
+    expect(db.events[0].status).toBe('voting');
   });
 
   it('keeps an existing draft status as draft (no auto-promotion)', () => {
     const db = normalizeDb({ event: { name: 'X', status: 'draft' } }, NOW);
-    expect(db.event.status).toBe('draft');
+    expect(db.events[0].status).toBe('draft');
   });
 
   it('preserves participants and vehicle.participantId, tolerating orphans', () => {
@@ -132,9 +134,9 @@ describe('normalizeDb', () => {
   });
 
   it('clamps a negative or junk entryFee to 0 and keeps a valid one', () => {
-    expect(normalizeDb({ event: { entryFee: -5 } }, NOW).event.entryFee).toBe(0);
-    expect(normalizeDb({ event: { entryFee: 'abc' } }, NOW).event.entryFee).toBe(0);
-    expect(normalizeDb({ event: { entryFee: 12 } }, NOW).event.entryFee).toBe(12);
+    expect(normalizeDb({ event: { entryFee: -5 } }, NOW).events[0].entryFee).toBe(0);
+    expect(normalizeDb({ event: { entryFee: 'abc' } }, NOW).events[0].entryFee).toBe(0);
+    expect(normalizeDb({ event: { entryFee: 12 } }, NOW).events[0].entryFee).toBe(12);
   });
 
   it('drops orphan votes whose vehicle was deleted', () => {
@@ -152,13 +154,14 @@ describe('normalizeDb', () => {
 
   it('coerces an unknown event status to draft', () => {
     const db = normalizeDb({ event: { name: 'X', status: 'wat' } }, NOW);
-    expect(db.event.status).toBe('draft');
+    expect(db.events[0].status).toBe('draft');
   });
 
   it('keeps a valid status and uses default name fallback', () => {
     const db = normalizeDb({ event: { name: '   ', status: 'closed' } }, NOW);
-    expect(db.event.status).toBe('closed');
-    expect(db.event.name).toBe(defaultDb(NOW).event.name);
+    expect(db.events[0].status).toBe('closed');
+    // normalizeEvent retombe sur 'Événement' quand le nom est vide/blanc.
+    expect(db.events[0].name).toBe('Événement');
   });
 });
 

@@ -18,6 +18,7 @@ import {
   findExistingVote,
   isOwnVehicle,
   normalizeDb,
+  normalizeEvent,
   normalizeLottery,
   normalizeLotteryEntry,
   normalizeParticipant,
@@ -137,6 +138,18 @@ let db;
 let revision = 0;
 let lastBackupRevision = -1;
 let backupTimer = null;
+
+// ─── Helpers multi-événements (phase 3) ─────────────────────────────────────
+// Un seul événement est « actif » à la fois : c'est celui que voient les
+// visiteurs et celui qui répond à `/api/event`. Les routes admin de gestion
+// (/api/events) opèrent sur les autres également.
+function activeEvent() {
+  return db.events.find((e) => e.id === db.activeEventId) || db.events[0];
+}
+function activeId() {
+  return activeEvent()?.id;
+}
+const ofActive = (rows) => rows.filter((r) => r.eventId === activeId());
 
 function serialize() {
   return JSON.stringify(db, null, 2);
@@ -312,7 +325,7 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-app.get('/api/event', (_req, res) => res.json(db.event));
+app.get('/api/event', (_req, res) => res.json(activeEvent()));
 
 // Aide la page QR à fabriquer un lien que les téléphones du même WiFi peuvent
 // vraiment ouvrir (impossible si on encode "localhost"). On expose l'IP LAN
@@ -327,8 +340,8 @@ app.get('/api/network', (_req, res) => {
     behindTunnel: WANT_TUNNEL,
   });
 });
-app.get('/api/vehicles', (_req, res) => res.json(db.vehicles));
-app.get('/api/votes', (_req, res) => res.json(db.votes.map(publicVote)));
+app.get('/api/vehicles', (_req, res) => res.json(ofActive(db.vehicles)));
+app.get('/api/votes', (_req, res) => res.json(ofActive(db.votes).map(publicVote)));
 
 app.post('/api/admin/login', (req, res) => {
   const ip = clientIp(req);
@@ -347,7 +360,7 @@ app.post('/api/admin/login', (req, res) => {
 });
 
 app.post('/api/votes', (req, res) => {
-  if (db.event.status !== 'voting') {
+  if (activeEvent().status !== 'voting') {
     res.status(403).json({ error: 'Les votes ne sont pas ouverts.' });
     return;
   }
@@ -386,7 +399,7 @@ app.post('/api/votes', (req, res) => {
   } else {
     db.votes.push({
       id: randomUUID(),
-      eventId: EVENT_ID,
+      eventId: activeId(),
       vehicleId,
       voterId: voterId || undefined,
       voterPseudo,
@@ -405,7 +418,7 @@ app.post('/api/votes', (req, res) => {
 // son statut de paiement est préservé. On ne renvoie jamais le deviceToken ni
 // les infos de contact dans la réponse.
 app.post('/api/register', (req, res) => {
-  if (db.event.status !== 'registrations') {
+  if (activeEvent().status !== 'registrations') {
     res.status(403).json({ error: 'Les inscriptions ne sont pas ouvertes.' });
     return;
   }
@@ -430,6 +443,7 @@ app.post('/api/register', (req, res) => {
   const participant = normalizeParticipant(
     { pseudo, deviceToken, contactInfo: body.contactInfo, registeredAt: now },
     now,
+    activeId(),
   );
   db.participants.push(participant);
   saveDb();
@@ -447,31 +461,32 @@ app.get('/api/register/status', (req, res) => {
 // Résumé de la cagnotte (public) : montants seulement, aucune donnée perso.
 // Permet d'afficher l'enjeu sur le podium pour motiver les votes.
 app.get('/api/prize', (_req, res) => {
-  const paidCount = db.participants.filter((p) => p.hasPaid).length;
-  const fee = db.event.entryFee || 0;
+  const paidCount = ofActive(db.participants).filter((p) => p.hasPaid).length;
+  const fee = activeEvent().entryFee || 0;
   res.json({ entryFee: fee, paidCount, ...computePrizePool(paidCount, fee) });
 });
 
 // Cagnottes par catégorie (public, montants + comptes seulement, aucune donnée
 // perso). Permet d'afficher un podium et un pot par catégorie.
 app.get('/api/categories', (_req, res) => {
-  const fee = db.event.entryFee || 0;
-  res.json({ entryFee: fee, categories: computeCategoryPools(db.vehicles, db.participants, fee) });
+  const fee = activeEvent().entryFee || 0;
+  res.json({ entryFee: fee, categories: computeCategoryPools(ofActive(db.vehicles), ofActive(db.participants), fee) });
 });
 
 app.patch('/api/event', requireAdmin, (req, res) => {
+  const ev = activeEvent();
   const body = req.body || {};
   if (typeof body.name === 'string' && body.name.trim()) {
-    db.event.name = body.name.trim();
+    ev.name = body.name.trim();
   }
   if (typeof body.status === 'string' && ['draft', 'registrations', 'voting', 'closed'].includes(body.status)) {
-    db.event.status = body.status;
+    ev.status = body.status;
   }
   if (typeof body.entryFee === 'number' && Number.isFinite(body.entryFee) && body.entryFee >= 0) {
-    db.event.entryFee = body.entryFee;
+    ev.entryFee = body.entryFee;
   }
   saveDb();
-  res.json(db.event);
+  res.json(ev);
 });
 
 app.post('/api/vehicles', requireAdmin, (req, res) => {
@@ -505,7 +520,7 @@ app.post('/api/vehicles', requireAdmin, (req, res) => {
   }
   const vehicle = {
     id: randomUUID(),
-    eventId: EVENT_ID,
+    eventId: activeId(),
     name,
     ownerName,
     category: String(body.category || '').trim(),
@@ -558,7 +573,7 @@ app.delete('/api/votes', requireAdmin, (_req, res) => {
 
 // Liste complète des inscrits (admin uniquement : contient contact + paiement).
 app.get('/api/participants', requireAdmin, (_req, res) => {
-  res.json(db.participants);
+  res.json(ofActive(db.participants));
 });
 
 app.patch('/api/participants/:id', requireAdmin, (req, res) => {
@@ -617,7 +632,7 @@ function nextEntryNumber(lotteryId) {
 }
 
 app.get('/api/lotteries', requireAdmin, (_req, res) => {
-  res.json(db.lotteries);
+  res.json(ofActive(db.lotteries));
 });
 
 app.post('/api/lotteries', requireAdmin, (req, res) => {
@@ -637,7 +652,7 @@ app.post('/api/lotteries', requireAdmin, (req, res) => {
     prizeValue: body.prizeValue,
     maxTicketsPerBuyer: body.maxTicketsPerBuyer,
     status: 'open',
-  });
+  }, undefined, activeId());
   if (!lottery) { res.status(400).json({ error: 'Nom de la loterie obligatoire.' }); return; }
   db.lotteries.push(lottery);
   saveDb();
@@ -794,7 +809,7 @@ app.post('/api/lotteries/:id/draw', requireAdmin, (req, res) => {
 // run, longueur = race.rounds). Le meilleur temps détermine le classement.
 
 app.get('/api/races', requireAdmin, (_req, res) => {
-  res.json(db.races);
+  res.json(ofActive(db.races));
 });
 
 // Liste PUBLIQUE des courses ouvertes aux paris (aucune auth, aucune donnée
@@ -802,7 +817,7 @@ app.get('/api/races', requireAdmin, (_req, res) => {
 // nombre de pilotes et pot des paris PAYÉS. C'est le pendant public de
 // GET /api/races (admin).
 app.get('/api/races/public-list', (_req, res) => {
-  const open = db.races.filter((r) => r.bettingStatus === 'open');
+  const open = ofActive(db.races).filter((r) => r.bettingStatus === 'open');
   const list = open.map((race) => {
     const pot = db.raceBets
       .filter((b) => b.raceId === race.id && b.hasPaid)
@@ -821,7 +836,7 @@ app.get('/api/races/public-list', (_req, res) => {
 });
 
 app.post('/api/races', requireAdmin, (req, res) => {
-  const race = normalizeRace({ ...(req.body || {}), status: 'open' });
+  const race = normalizeRace({ ...(req.body || {}), status: 'open' }, undefined, activeId());
   if (!race) { res.status(400).json({ error: 'Nom de la course obligatoire.' }); return; }
   db.races.push(race);
   saveDb();
@@ -1069,13 +1084,96 @@ app.post('/api/races/:id/winner', requireAdmin, (req, res) => {
   res.json({ race, betPayouts: computeBetPayouts(bets, winnerPilotId, race.betOrgaCutPercent) });
 });
 
-app.get('/api/admin/audit', requireAdmin, (_req, res) => {
-  res.json(computeAudit(db.votes));
+// ─── Gestion multi-événements (admin) ───────────────────────────────────────
+
+// Liste tous les événements + lequel est actif + compteurs par event.
+app.get('/api/events', requireAdmin, (_req, res) => {
+  const events = db.events.map((e) => ({
+    ...e,
+    stats: {
+      vehicles: db.vehicles.filter((v) => v.eventId === e.id).length,
+      participants: db.participants.filter((p) => p.eventId === e.id).length,
+      votes: db.votes.filter((v) => v.eventId === e.id).length,
+    },
+  }));
+  res.json({ events, activeEventId: db.activeEventId });
 });
 
-// Récap financier de toute la soirée (concours + loteries + courses + paris).
+// Crée un événement en brouillon (NON actif).
+app.post('/api/events', requireAdmin, (req, res) => {
+  const name = String(req.body?.name || '').trim();
+  if (!name) { res.status(400).json({ error: "Nom de l'événement obligatoire." }); return; }
+  const ev = normalizeEvent({ name, entryFee: req.body?.entryFee, status: 'draft' }, undefined, randomUUID());
+  db.events.push(ev);
+  saveDb();
+  res.status(201).json(ev);
+});
+
+// Modifier un événement précis (nom / statut / tarif) — actif ou non.
+app.patch('/api/events/:id', requireAdmin, (req, res) => {
+  const ev = db.events.find((e) => e.id === req.params.id);
+  if (!ev) { res.status(404).json({ error: 'Événement introuvable.' }); return; }
+  const b = req.body || {};
+  if (typeof b.name === 'string' && b.name.trim()) ev.name = b.name.trim();
+  if (typeof b.status === 'string' && ['draft', 'registrations', 'voting', 'closed'].includes(b.status)) ev.status = b.status;
+  if (b.entryFee !== undefined && Number(b.entryFee) >= 0) ev.entryFee = Number(b.entryFee);
+  saveDb();
+  res.json(ev);
+});
+
+// Bascule l'événement actif (celui que voient les visiteurs).
+app.post('/api/events/:id/activate', requireAdmin, (req, res) => {
+  const ev = db.events.find((e) => e.id === req.params.id);
+  if (!ev) { res.status(404).json({ error: 'Événement introuvable.' }); return; }
+  db.activeEventId = ev.id;
+  saveDb();
+  res.json({ activeEventId: db.activeEventId });
+});
+
+// Supprime un événement + TOUTES ses données (cascade). Refusé si actif ou
+// dernier événement restant.
+app.delete('/api/events/:id', requireAdmin, (req, res) => {
+  const id = req.params.id;
+  if (id === db.activeEventId) { res.status(409).json({ error: "Impossible de supprimer l'événement actif." }); return; }
+  if (db.events.length <= 1) { res.status(409).json({ error: 'Au moins un événement doit exister.' }); return; }
+  const idx = db.events.findIndex((e) => e.id === id);
+  if (idx === -1) { res.status(404).json({ error: 'Événement introuvable.' }); return; }
+  backupDb('avant-suppression-event');
+  db.events.splice(idx, 1);
+  const raceIds = new Set(db.races.filter((r) => r.eventId === id).map((r) => r.id));
+  const lottoIds = new Set(db.lotteries.filter((l) => l.eventId === id).map((l) => l.id));
+  db.vehicles = db.vehicles.filter((v) => v.eventId !== id);
+  db.votes = db.votes.filter((v) => v.eventId !== id);
+  db.participants = db.participants.filter((p) => p.eventId !== id);
+  db.races = db.races.filter((r) => r.eventId !== id);
+  db.racePilots = db.racePilots.filter((p) => !raceIds.has(p.raceId));
+  db.raceBets = db.raceBets.filter((b) => !raceIds.has(b.raceId));
+  db.lotteries = db.lotteries.filter((l) => l.eventId !== id);
+  db.lotteryEntries = db.lotteryEntries.filter((e) => !lottoIds.has(e.lotteryId));
+  saveDb();
+  res.json({ ok: true });
+});
+
+app.get('/api/admin/audit', requireAdmin, (_req, res) => {
+  res.json(computeAudit(ofActive(db.votes)));
+});
+
+// Récap financier de l'événement actif (concours + loteries + courses + paris).
+// Les collections sont déjà filtrées sur l'event actif ; les enfants par
+// parent (lotteryEntries, racePilots, raceBets) suivent leur lottery/race
+// donc on les passe tels quels et le helper filtre via les ids.
 app.get('/api/admin/finance', requireAdmin, (_req, res) => {
-  res.json(computeFinanceSummary(db));
+  res.json(computeFinanceSummary({
+    event: activeEvent(),
+    vehicles: ofActive(db.vehicles),
+    participants: ofActive(db.participants),
+    votes: ofActive(db.votes),
+    lotteries: ofActive(db.lotteries),
+    lotteryEntries: db.lotteryEntries,
+    races: ofActive(db.races),
+    racePilots: db.racePilots,
+    raceBets: db.raceBets,
+  }));
 });
 
 app.get('/api/admin/backup', requireAdmin, (_req, res) => {

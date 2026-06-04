@@ -971,7 +971,13 @@ tr:last-child td { border-bottom: 0; }
 
 .admin-dash {
   --surface-3: #260f4a;
-  /* override de la largeur de page : le dashboard est pleine largeur */
+}
+
+/* La route /admin est sortie de .app-shell par Layout : elle occupe tout
+   l'écran (plus de bandes vides ni de navbar visiteur en doublon). */
+.admin-route {
+  width: 100%;
+  min-height: 100vh;
 }
 
 /* La page admin sort de la contrainte .app-shell (max 1120px) */
@@ -981,6 +987,32 @@ tr:last-child td { border-bottom: 0; }
   margin: 0;
   padding: 0;
 }
+
+/* Marque dans la sidebar (la navbar globale est masquée sur /admin) */
+.admin-dash .ad-brand {
+  display: flex; align-items: center; gap: 10px;
+  padding: 4px 8px 10px;
+  border-bottom: 1px solid var(--line-soft);
+  margin-bottom: 8px;
+}
+.admin-dash .ad-brand-mark {
+  width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center;
+  color: #fff; font-family: var(--f-display); font-weight: 900; font-size: 22px; line-height: 1;
+  background: linear-gradient(135deg, var(--magenta), var(--violet));
+  box-shadow: 0 0 14px rgba(255, 43, 214, 0.5);
+  flex: 0 0 auto;
+}
+.admin-dash .ad-brand-word {
+  font-family: var(--f-mono); font-size: 11px; font-weight: 700; letter-spacing: 0.16em;
+  text-transform: uppercase; line-height: 1.3; display: flex; flex-direction: column;
+}
+.admin-dash .ad-brand-word small { color: var(--text-3); font-size: 8.5px; letter-spacing: 0.18em; }
+.admin-dash .ad-brand-dot { color: var(--cyan); }
+.admin-dash .ad-brand-exit {
+  margin-left: auto; color: var(--text-3); display: grid; place-items: center;
+  width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface);
+}
+.admin-dash .ad-brand-exit:hover { color: var(--cyan); border-color: var(--cyan); }
 
 /* Shell : sidebar + main */
 .admin-dash .ad-shell {
@@ -1069,7 +1101,12 @@ tr:last-child td { border-bottom: 0; }
 }
 .admin-dash .ad-topbar .crumb { font-family: var(--f-mono); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-3); margin-bottom: 5px; }
 .admin-dash .ad-topbar h1 { font-family: var(--f-display); font-size: 26px; font-weight: 800; text-transform: uppercase; letter-spacing: -0.01em; margin: 0; line-height: 1.06; white-space: nowrap; }
-.admin-dash .ad-content { padding: 24px 28px 60px; display: grid; gap: 16px; }
+.admin-dash .ad-content { padding: 24px 28px 60px; display: grid; gap: 16px; align-content: start; }
+/* Sur très grand écran, on évite des lignes de tableau démesurées tout en
+   remplissant l'espace : le contenu s'étale jusqu'à 1760px puis se cale à gauche. */
+@media (min-width: 1900px) {
+  .admin-dash .ad-content { max-width: 1760px; }
+}
 
 /* Phase pill */
 .admin-dash .phase-pill {
@@ -1125,4 +1162,59 @@ tr:last-child td { border-bottom: 0; }
   .admin-dash .kpi-grid { grid-template-columns: repeat(2, 1fr); }
   .admin-dash .cols-2, .admin-dash .phase-rail { grid-template-columns: 1fr; }
   .admin-dash .ad-topbar h1 { white-space: normal; font-size: 22px; }
+}
+
+/* ─── Section Événements (multi-events) ─────────────────── */
+.admin-dash .events-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+}
+.admin-dash .event-card {
+  border: 1px solid var(--line-soft);
+  border-radius: 16px;
+  background: var(--surface);
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+}
+.admin-dash .event-card.is-active {
+  border-color: rgba(34, 230, 255, 0.5);
+  background: linear-gradient(150deg, rgba(34, 230, 255, 0.07), var(--surface) 60%);
+  box-shadow: 0 0 24px -10px rgba(34, 230, 255, 0.5);
+}
+.admin-dash .event-card-name {
+  font-family: var(--f-display);
+  font-size: 1.5rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: -0.01em;
+  line-height: 1.04;
+  margin: 0;
+}
+.admin-dash .event-card-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line-soft);
+}
+.admin-dash .event-card-stats > div { display: flex; flex-direction: column; gap: 3px; }
+.admin-dash .event-card-stats .ec-num {
+  font-family: var(--f-display); font-weight: 800; font-size: 1.4rem; line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.admin-dash .event-card-stats .ec-lbl {
+  font-family: var(--f-mono); font-size: 8.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-3);
+}
+.admin-dash .event-card-new {
+  border-style: dashed;
+  border-color: var(--line);
+  background: var(--surface-2);
+  gap: 10px;
+}
+.admin-dash .event-card-new .ecn-plus {
+  width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center;
+  color: var(--magenta); background: rgba(255, 43, 214, 0.12); flex: 0 0 auto;
 }

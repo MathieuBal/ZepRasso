@@ -363,3 +363,51 @@ export async function downloadMarblesCsv(lotteryId: string): Promise<Blob> {
   }
   return response.blob();
 }
+
+// ════════════════════════════════════════════════════════════════════════
+// PACK 3 — Multi-événements
+// Toutes les routes /api/events sont admin → adminHeaders() requis.
+// ════════════════════════════════════════════════════════════════════════
+
+/** Événement enrichi de compteurs pour l'affichage de la base de contrôle. */
+export type AdminEvent = RassoEvent & {
+  stats?: { vehicles: number; participants: number; votes: number };
+};
+
+export type EventsBundle = {
+  events: AdminEvent[];
+  activeEventId: string;
+};
+
+/** Liste tous les événements + lequel est actif (admin). */
+export function getEventsAdmin(): Promise<EventsBundle> {
+  return api<EventsBundle>('/events', { headers: adminHeaders() });
+}
+
+/** Crée un nouvel événement (en brouillon). Ne le rend PAS actif. */
+export function createEvent(input: { name: string; entryFee?: number }): Promise<RassoEvent> {
+  return api<RassoEvent>('/events', { method: 'POST', headers: adminHeaders(), body: JSON.stringify(input) });
+}
+
+/** Renomme un événement (n'importe lequel, actif ou non). */
+export function renameEvent(id: string, name: string): Promise<RassoEvent> {
+  return api<RassoEvent>(`/events/${id}`, { method: 'PATCH', headers: adminHeaders(), body: JSON.stringify({ name }) });
+}
+
+/** Met à jour le statut/tarif d'un événement précis (utile hors event actif). */
+export function updateEventById(
+  id: string,
+  patch: Partial<Pick<RassoEvent, 'name' | 'status' | 'entryFee'>>,
+): Promise<RassoEvent> {
+  return api<RassoEvent>(`/events/${id}`, { method: 'PATCH', headers: adminHeaders(), body: JSON.stringify(patch) });
+}
+
+/** Bascule l'événement actif (celui que voient les visiteurs). */
+export function setActiveEvent(id: string): Promise<{ activeEventId: string }> {
+  return api<{ activeEventId: string }>(`/events/${id}/activate`, { method: 'POST', headers: adminHeaders() });
+}
+
+/** Supprime un événement et TOUTES ses données. Refusé si c'est l'actif. */
+export function deleteEvent(id: string): Promise<{ ok: true }> {
+  return api<{ ok: true }>(`/events/${id}`, { method: 'DELETE', headers: adminHeaders() });
+}

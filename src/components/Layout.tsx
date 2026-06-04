@@ -1,6 +1,6 @@
 import { Car, ClipboardList, Home, QrCode, Shield, Timer, Trophy, UserRound } from 'lucide-react';
 import { useCallback, useState } from 'react';
-import { Link, NavLink } from 'react-router-dom';
+import { Link, NavLink, useLocation } from 'react-router-dom';
 import { getStoredPseudo, isAdminUnlocked } from '../lib/localSession';
 import { getEvent, getRacesPublicList } from '../lib/repository';
 import { usePolling } from '../lib/usePolling';
@@ -13,6 +13,7 @@ type LayoutProps = {
 export default function Layout({ children }: LayoutProps) {
   const pseudo = getStoredPseudo();
   const adminMode = isAdminUnlocked();
+  const location = useLocation();
   const [status, setStatus] = useState<EventStatus | null>(null);
   const [racesOpen, setRacesOpen] = useState(0);
 
@@ -23,6 +24,13 @@ export default function Layout({ children }: LayoutProps) {
     getRacesPublicList().then((races) => setRacesOpen(races.length)).catch(() => { /* idem */ });
   }, []);
   usePolling(loadNav, 15000);
+
+  // L'admin est un dashboard pleine largeur avec sa PROPRE navigation (sidebar).
+  // On le sort donc de la coquille visiteur (.app-shell centré 1120px + navbar
+  // + tabbar mobile) qui gaspillait l'espace et faisait doublon.
+  if (location.pathname.startsWith('/admin')) {
+    return <div className="admin-route">{children}</div>;
+  }
 
   const registrationsOpen = status === 'registrations';
   const betsOpen = racesOpen > 0;
