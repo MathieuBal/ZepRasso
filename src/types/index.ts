@@ -33,6 +33,7 @@ export type LotteryStatus = 'open' | 'closed' | 'drawn';
 
 export type Lottery = {
   id: string;
+  eventId: string;
   name: string;
   prizeDescription?: string;
   prizeImageUrl?: string;
@@ -73,6 +74,7 @@ export type RaceBettingStatus = 'closed' | 'open' | 'locked';
 
 export type Race = {
   id: string;
+  eventId: string;
   name: string;
   description?: string;
   entryFee: number;

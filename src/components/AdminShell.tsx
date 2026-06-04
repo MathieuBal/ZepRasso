@@ -1,18 +1,19 @@
 import {
-  ArrowLeftRight, Car, Coins, Flag, LayoutGrid, Lock, RefreshCw,
+  ArrowLeftRight, Car, Coins, ExternalLink, Flag, LayoutGrid, Lock, RefreshCw,
   Shield, Ticket, Timer, Trophy, Users, Wrench,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import type { EventStatus } from '../types';
 
 // ════════════════════════════════════════════════════════════════════════
-// AdminShell — coquille de navigation du dashboard admin (phase 2).
+// AdminShell — coquille de navigation du dashboard admin (phase 2 + 3).
 //
 // Composant CONTRÔLÉ : c'est AdminPage qui possède l'état `active` et le passe
 // avec `onNavigate`. Ainsi la section « Vue d'ensemble » peut renvoyer vers
 // n'importe quelle autre section (boutons « Voir »).
 //
-// Présentation pure — aucune logique métier. Voir handoff/PHASE2-admin-dashboard.md.
+// Présentation pure — aucune logique métier.
 // ════════════════════════════════════════════════════════════════════════
 
 export type AdminSectionId =
@@ -39,6 +40,7 @@ const TITLE: Record<AdminSectionId, string> = {
 type NavDef = { id: AdminSectionId; label: string; Icon: typeof LayoutGrid; group: 'pilotage' | 'argent' | 'systeme' };
 
 const NAV: NavDef[] = [
+  { id: 'events', label: 'Événements', Icon: ArrowLeftRight, group: 'pilotage' },
   { id: 'overview', label: "Vue d'ensemble", Icon: LayoutGrid, group: 'pilotage' },
   { id: 'event', label: 'Événement', Icon: Flag, group: 'pilotage' },
   { id: 'participants', label: 'Participants', Icon: Users, group: 'pilotage' },
@@ -83,6 +85,12 @@ export default function AdminShell({
     <div className="admin-dash full-bleed">
       <div className="ad-shell">
         <aside className="ad-side">
+          <div className="ad-brand">
+            <span className="ad-brand-mark">Z</span>
+            <span className="ad-brand-word">Zep<span className="ad-brand-dot">·</span>Rasso<small>Admin</small></span>
+            <Link to="/" className="ad-brand-exit" title="Voir le site" aria-label="Voir le site"><ExternalLink size={15} /></Link>
+          </div>
+
           <button type="button" className="ad-evt" onClick={onSwitchEvent} disabled={!onSwitchEvent}>
             <div style={{ minWidth: 0 }}>
               <div className="ee-label">Événement actif</div>

@@ -2,6 +2,7 @@ import { ArrowRight, CheckCircle2, Coins, Download, QrCode, RefreshCw, Ticket, T
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import AdminShell, { type AdminSectionId } from '../components/AdminShell';
+import EventsPanel from '../components/EventsPanel';
 import ImagePicker from '../components/ImagePicker';
 import FinancePanel from '../components/FinancePanel';
 import LotteriesPanel from '../components/LotteriesPanel';
@@ -711,6 +712,13 @@ export default function AdminPage() {
       onError={(t) => { setMessage(null); setError(t); }}
     />
   );
+  const eventsSection = (
+    <EventsPanel
+      onMessage={(t) => { setError(null); setMessage(t); }}
+      onError={(t) => { setMessage(null); setError(t); }}
+      onActiveChange={() => run(refresh)}
+    />
+  );
 
   return (
     <AdminShell
@@ -722,7 +730,9 @@ export default function AdminPage() {
       notice={notice}
       onLock={handleLock}
       onRefresh={() => run(refresh)}
+      onSwitchEvent={() => setSection('events')}
       sections={{
+        events: eventsSection,
         overview: overviewSection,
         event: eventSection,
         participants: participantsSection,

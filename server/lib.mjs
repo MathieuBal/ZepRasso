@@ -12,13 +12,10 @@ export function clamp(value) {
 
 export function defaultDb(now = new Date().toISOString()) {
   return {
-    event: {
-      id: EVENT_ID,
-      name: 'ZepRasso - Car Meet RP',
-      status: 'draft',
-      entryFee: 0,
-      createdAt: now,
-    },
+    events: [
+      { id: EVENT_ID, name: 'ZepRasso - Car Meet RP', status: 'draft', entryFee: 0, createdAt: now },
+    ],
+    activeEventId: EVENT_ID,
     vehicles: [],
     votes: [],
     participants: [],
@@ -30,14 +27,29 @@ export function defaultDb(now = new Date().toISOString()) {
   };
 }
 
-export function normalizeVehicle(raw, now = new Date().toISOString()) {
+// A3 — normalizeur d'événement réutilisable (création + migration).
+export function normalizeEvent(raw, now = new Date().toISOString(), fallbackId) {
+  const base = { name: 'Événement', status: 'draft', entryFee: 0 };
+  let status = raw?.status === 'open' ? 'voting' : raw?.status;
+  if (!['draft', 'registrations', 'voting', 'closed'].includes(status)) status = 'draft';
+  const entryFee = Number.isFinite(Number(raw?.entryFee)) && Number(raw.entryFee) >= 0 ? Number(raw.entryFee) : 0;
+  return {
+    id: String(raw?.id || fallbackId || randomUUID()),
+    name: String(raw?.name || base.name).trim() || base.name,
+    status,
+    entryFee,
+    createdAt: String(raw?.createdAt || now),
+  };
+}
+
+export function normalizeVehicle(raw, now = new Date().toISOString(), fallbackEventId = EVENT_ID) {
   if (!raw || typeof raw !== 'object') return null;
   const name = String(raw.name || '').trim();
   const ownerName = String(raw.ownerName || '').trim();
   if (!name || !ownerName) return null;
   return {
     id: String(raw.id || randomUUID()),
-    eventId: EVENT_ID,
+    eventId: String(raw.eventId || fallbackEventId),
     name,
     ownerName,
     category: String(raw.category || '').trim(),
@@ -57,7 +69,7 @@ export function normalizeVehicle(raw, now = new Date().toISOString()) {
 // Un participant = un concurrent inscrit au concours (avec un compte lié à son
 // appareil via deviceToken). Style strict comme normalizeVote : on rejette une
 // entrée sans pseudo ni deviceToken.
-export function normalizeParticipant(raw, now = new Date().toISOString()) {
+export function normalizeParticipant(raw, now = new Date().toISOString(), fallbackEventId = EVENT_ID) {
   if (!raw || typeof raw !== 'object') return null;
   const pseudo = String(raw.pseudo || '').trim();
   const deviceToken = String(raw.deviceToken || '').trim();
@@ -65,7 +77,7 @@ export function normalizeParticipant(raw, now = new Date().toISOString()) {
   const method = raw.paymentMethod;
   return {
     id: String(raw.id || randomUUID()),
-    eventId: EVENT_ID,
+    eventId: String(raw.eventId || fallbackEventId),
     pseudo,
     deviceToken,
     contactInfo: raw.contactInfo ? String(raw.contactInfo).trim() : undefined,
@@ -76,14 +88,14 @@ export function normalizeParticipant(raw, now = new Date().toISOString()) {
   };
 }
 
-export function normalizeVote(raw, now = new Date().toISOString()) {
+export function normalizeVote(raw, now = new Date().toISOString(), fallbackEventId = EVENT_ID) {
   if (!raw || typeof raw !== 'object') return null;
   const voterPseudo = String(raw.voterPseudo || '').trim();
   const vehicleId = String(raw.vehicleId || '');
   if (!voterPseudo || !vehicleId) return null;
   return {
     id: String(raw.id || randomUUID()),
-    eventId: EVENT_ID,
+    eventId: String(raw.eventId || fallbackEventId),
     vehicleId,
     voterId: raw.voterId ? String(raw.voterId) : undefined,
     voterPseudo,
@@ -101,7 +113,7 @@ export function normalizeVote(raw, now = new Date().toISOString()) {
 // Une loterie : 1 prix (typiquement une voiture RP) tiré au sort parmi les
 // tickets PAYÉS. Le revenu est purement orga (les tickets ne forment pas une
 // cagnotte redistribuée).
-export function normalizeLottery(raw, now = new Date().toISOString()) {
+export function normalizeLottery(raw, now = new Date().toISOString(), fallbackEventId = EVENT_ID) {
   if (!raw || typeof raw !== 'object') return null;
   const name = String(raw.name || '').trim();
   if (!name) return null;
@@ -112,6 +124,7 @@ export function normalizeLottery(raw, now = new Date().toISOString()) {
   const status = ['open', 'closed', 'drawn'].includes(raw.status) ? raw.status : 'open';
   return {
     id: String(raw.id || randomUUID()),
+    eventId: String(raw.eventId || fallbackEventId),
     name,
     prizeDescription: raw.prizeDescription ? String(raw.prizeDescription).trim() : undefined,
     prizeImageUrl: typeof raw.prizeImageUrl === 'string' && raw.prizeImageUrl ? raw.prizeImageUrl : undefined,
@@ -181,62 +194,68 @@ export function computeLotteryStats(entries, ticketPrice) {
 
 export function normalizeDb(parsed, now = new Date().toISOString()) {
   const base = defaultDb(now);
-  const event = parsed && typeof parsed.event === 'object' && parsed.event ? parsed.event : base.event;
+
+  // ── Migration : ancien `db.event` (objet unique) → `db.events[]` ────────
+  let events;
+  let activeEventId;
+  if (Array.isArray(parsed?.events) && parsed.events.length > 0) {
+    events = parsed.events.map((e) => normalizeEvent(e, now)).filter(Boolean);
+    activeEventId = String(parsed.activeEventId || events[0].id);
+  } else if (parsed?.event && typeof parsed.event === 'object') {
+    // Ancien format : un seul event sous `db.event` → devient le 1er event,
+    // actif, conservant son id (typiquement 'rasso') pour que les eventId
+    // déjà stampés sur les entités correspondent.
+    events = [normalizeEvent(parsed.event, now, EVENT_ID)];
+    activeEventId = events[0].id;
+  } else {
+    events = base.events;
+    activeEventId = base.activeEventId;
+  }
+  if (!events.some((e) => e.id === activeEventId)) activeEventId = events[0].id;
+
+  // Les entités sans eventId rejoignent l'event actif (cas d'une vieille DB
+  // où certains documents n'avaient pas le champ).
+  const fallback = activeEventId;
+
   const vehicles = Array.isArray(parsed?.vehicles)
-    ? parsed.vehicles.map((raw) => normalizeVehicle(raw, now)).filter(Boolean)
+    ? parsed.vehicles.map((raw) => normalizeVehicle(raw, now, fallback)).filter(Boolean)
     : [];
   const vehicleIds = new Set(vehicles.map((vehicle) => vehicle.id));
-  // Les votes orphelins (pour un véhicule supprimé) sont écartés.
   const votes = Array.isArray(parsed?.votes)
     ? parsed.votes
-        .map((raw) => normalizeVote(raw, now))
+        .map((raw) => normalizeVote(raw, now, fallback))
         .filter((vote) => vote && vehicleIds.has(vote.vehicleId))
     : [];
   const participants = Array.isArray(parsed?.participants)
-    ? parsed.participants.map((raw) => normalizeParticipant(raw, now)).filter(Boolean)
+    ? parsed.participants.map((raw) => normalizeParticipant(raw, now, fallback)).filter(Boolean)
     : [];
   const lotteries = Array.isArray(parsed?.lotteries)
-    ? parsed.lotteries.map((raw) => normalizeLottery(raw, now)).filter(Boolean)
+    ? parsed.lotteries.map((raw) => normalizeLottery(raw, now, fallback)).filter(Boolean)
     : [];
   const lotteryIds = new Set(lotteries.map((l) => l.id));
-  // Les tickets orphelins (loterie supprimée) sont écartés à la lecture.
   const lotteryEntries = Array.isArray(parsed?.lotteryEntries)
     ? parsed.lotteryEntries
         .map((raw) => normalizeLotteryEntry(raw, now))
         .filter((e) => e && lotteryIds.has(e.lotteryId))
     : [];
   const races = Array.isArray(parsed?.races)
-    ? parsed.races.map((raw) => normalizeRace(raw, now)).filter(Boolean)
+    ? parsed.races.map((raw) => normalizeRace(raw, now, fallback)).filter(Boolean)
     : [];
   const raceIds = new Set(races.map((r) => r.id));
-  // Pilotes orphelins (course supprimée) écartés à la lecture.
   const racePilots = Array.isArray(parsed?.racePilots)
     ? parsed.racePilots
         .map((raw) => normalizeRacePilot(raw, now)).filter((p) => p && raceIds.has(p.raceId))
     : [];
   const pilotIds = new Set(racePilots.map((p) => p.id));
-  // Paris orphelins (course OU pilote supprimé) écartés.
   const raceBets = Array.isArray(parsed?.raceBets)
     ? parsed.raceBets
         .map((raw) => normalizeRaceBet(raw, now))
         .filter((b) => b && raceIds.has(b.raceId) && pilotIds.has(b.pilotId))
     : [];
-  // Migration de statut : l'ancien 'open' (votes ouverts) devient 'voting'.
-  // Tout statut inconnu retombe sur 'draft' (état le plus sûr : ni vote ni
-  // inscription).
-  let status = event.status === 'open' ? 'voting' : event.status;
-  if (!['draft', 'registrations', 'voting', 'closed'].includes(status)) status = 'draft';
-  const entryFee = Number.isFinite(Number(event.entryFee)) && Number(event.entryFee) >= 0
-    ? Number(event.entryFee)
-    : 0;
+
   return {
-    event: {
-      id: EVENT_ID,
-      name: String(event.name || base.event.name).trim() || base.event.name,
-      status,
-      entryFee,
-      createdAt: String(event.createdAt || base.event.createdAt),
-    },
+    events,
+    activeEventId,
     vehicles,
     votes,
     participants,
@@ -392,7 +411,7 @@ export function formatMs(ms) {
 // Une course chrono. sequenceMode est purement indicatif côté UI (mode A =
 // chaque pilote enchaîne ses runs ; mode B = tour par tour pour tout le monde).
 // La donnée est identique dans les deux cas : un tableau de N temps par pilote.
-export function normalizeRace(raw, now = new Date().toISOString()) {
+export function normalizeRace(raw, now = new Date().toISOString(), fallbackEventId = EVENT_ID) {
   if (!raw || typeof raw !== 'object') return null;
   const name = String(raw.name || '').trim();
   if (!name) return null;
@@ -409,6 +428,7 @@ export function normalizeRace(raw, now = new Date().toISOString()) {
   const bettingStatus = ['closed', 'open', 'locked'].includes(raw.bettingStatus) ? raw.bettingStatus : 'closed';
   return {
     id: String(raw.id || randomUUID()),
+    eventId: String(raw.eventId || fallbackEventId),
     name,
     description: raw.description ? String(raw.description).trim() : undefined,
     entryFee,
